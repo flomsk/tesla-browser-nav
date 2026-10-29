@@ -1,235 +1,173 @@
-# AGENTS.md - Tesla Browser Nav Codebase Guidelines
+# AGENTS.md — Tesla Browser Nav
 
-Tesla Browser Nav is a navigation web app optimized for Tesla's in-car browser. Built with Next.js 16 (App Router), React 19, TypeScript 5, and Tailwind CSS 4.
+Guide for coding agents (Claude Code, Cursor, Codex…) and humans working on this repo. Read it
+before changing anything: it records what the code can't tell you — why things are the way they are.
 
-## Build, Lint & Test Commands
+## What this is
 
-```bash
-bun install              # Install dependencies (package manager: Bun)
-bun run dev              # Start dev server (http://localhost:3000)
-bun run build            # Production build
-bun run start            # Start production server
-bun run lint             # Run ESLint across project
-bunx eslint <file>       # Lint a specific file
-bunx eslint --fix <file> # Auto-fix lint issues in a file
-bunx tsc --noEmit        # Type check without emitting output
-bun run scripts/test-waze-bounds.ts  # Manual Waze API bounds test (CLI utility)
-```
+A Waze-style navigator that runs **in the Tesla in-car browser**. Tesla doesn't allow third-party
+apps, so this is a web app (Next.js) built for the car screen and for driving in **Spain**.
+Forked from [teslanav.com](https://github.com/R44VC0RP/teslanav.com) (Ryan Vogel, PolyForm
+Noncommercial 1.0.0 — keep `LICENSE` and the attribution in README/About; no commercial use).
 
-**No test framework is configured.** There are no unit/integration tests. Validation is done via TypeScript strict mode and manual browser testing. Add `?dev=true` to the URL to enable debug overlays.
+The upstream app was built on Waze's unofficial live-map feed, which Waze blocked. Everything that
+came from Waze has been replaced (see *Data sources*). Don't try to scrape or proxy Waze again.
 
-## Project Structure
+Repo: `flomsk/tesla-browser-nav`, branch `main` (pushed directly so far). The `upstream` remote
+points at the original teslanav.com repo.
 
-```
-app/                    # Next.js App Router - pages and API routes
-  api/                  # Server-side API routes (route.ts per endpoint)
-  admin/                # Admin dashboard (usage stats)
-  record/               # GPX track recording page
-  view/                 # GPX track playback page
-components/             # React components (ui/ for shadcn/ui primitives)
-hooks/                  # Custom React hooks (use* prefix, camelCase.ts files)
-lib/                    # Shared server/client utilities
-  redis.ts              # Upstash Redis client, cache keys, TTLs, rate limits, API tracking
-  utils.ts              # cn() = clsx + tailwind-merge
-  gpx.ts                # GPX generation, parsing, interpolation
-  posthog-server.ts     # Server-side PostHog singleton
-types/                  # TypeScript type definitions (one file per domain)
-public/                 # Static assets (icons/, cars/, sw.js service worker)
-scripts/                # Developer utility scripts (not part of the app)
-```
+## Product principles (the owner cares about these)
 
-## Code Style Guidelines
+- **The map stays clean.** Only what matters while driving: route, the car, speed, warnings.
+  Places (chargers, fuel, cafés…) appear only on request (search / category chips) and disappear
+  when search closes. Don't add always-on layers or extra buttons; remove clutter when you see it.
+- **Glanceable and big.** Large touch targets (chips 48 px, rows 64 px, buttons 56 px), large
+  text, one primary action per card. Nothing hover-only.
+- **Voice for anything you'd otherwise have to read.** Every warning is spoken once, in the chosen
+  language (en / es / ru). Audio only works after the "Start driving" tap unlocked it.
+- **Spain first.** Official Spanish sources (DGT, SCT, Ministry) beat global ones where they exist.
 
-### Import Organization
-
-```typescript
-"use client";  // 1. Directive first (if needed)
-
-import { useState, useCallback } from "react";  // 2. React
-import mapboxgl from "mapbox-gl";               // 3. External packages
-import { cn } from "@/lib/utils";               // 4. Internal path-aliased (@/)
-import { LocalComp } from "./LocalComp";        // 5. Relative imports
-import type { MyType } from "@/types/foo";      // 6. Type-only imports last
-```
-
-### Naming Conventions
-
-| Element | Convention | Example |
-|---------|------------|---------|
-| Components | PascalCase | `NavigateSearch`, `SettingsModal` |
-| Component files | PascalCase.tsx | `Map.tsx`, `FeedbackModal.tsx` |
-| Hooks | camelCase `use` prefix | `useGeolocation`, `useWazeAlerts` |
-| Hook files | camelCase.ts | `useGeolocation.ts` |
-| Types/Interfaces | PascalCase | `WazeAlert`, `RouteData` |
-| Type files | camelCase.ts | `waze.ts`, `route.ts` |
-| API routes | route.ts | `app/api/directions/route.ts` |
-| Constants | UPPER_SNAKE_CASE | `CACHE_TTL`, `RATE_LIMITS` |
-| Functions/variables | camelCase | `fetchDirections`, `handleClick` |
-| localStorage keys | `tbn-` prefix | `tbn-theme`, `tbn-follow-mode` |
-
-### TypeScript Guidelines
-
-- **Strict mode is enabled** — all code must pass `bunx tsc --noEmit`
-- Use `interface` for object shapes that may be extended; `type` for unions and computed types
-- Prefer explicit return types on all exported functions
-- Use the `type` keyword for type-only imports: `import type { Foo } from "..."`
-- No `any` — use `unknown` with narrowing or proper generic types
-- Zod (`zod`) is available for runtime validation of external API responses
-
-### Component Patterns
-
-```typescript
-"use client";
-
-import { useState, useCallback, forwardRef } from "react";
-
-interface MyComponentProps {
-  required: string;
-  optional?: number;
-  onAction?: (value: string) => void;
-}
-
-// Named exports for components (not default exports, except page.tsx files)
-export const MyComponent = forwardRef<HTMLDivElement, MyComponentProps>(
-  function MyComponent({ required, optional = 0, onAction }, ref) {
-    const handleClick = useCallback(() => {
-      onAction?.(required);
-    }, [onAction, required]);
-
-    return <div ref={ref} onClick={handleClick}>{/* content */}</div>;
-  }
-);
-```
-
-- Page files (`app/**/page.tsx`) use `export default function`
-- All other components use named exports: `export const Foo = ...` or `export function Foo`
-- Wrap callbacks in `useCallback` with proper dependency arrays
-- Use `useRef` for animation frames, timers, DOM elements, and mutable counters that should not trigger re-renders
-- Private helper sub-components (not exported) may live at the bottom of a file (e.g., `Toggle`, `CloseIcon`)
-- Prefer inline SVG for one-off icons rather than importing from lucide-react
-
-### State Management
-
-- `useState` with lazy initializer for localStorage-persisted preferences:
-  ```typescript
-  const [theme, setTheme] = useState(() => localStorage.getItem("tbn-theme") ?? "dark");
-  ```
-- `useRef` for values that should not trigger re-renders (animation state, timers, previous values)
-- Dark mode is passed as a prop (`isDarkMode: boolean`), not via context or CSS class
-- Server-side state uses Redis (`@/lib/redis`) — see cache keys defined in `CACHE_KEYS`
-
-### API Route Patterns
-
-All API routes follow: **validate params → check Redis cache → check rate limit → fetch upstream → cache result → return response**
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
-
-export async function GET(request: NextRequest) {
-  const param = request.nextUrl.searchParams.get("param");
-  if (!param) {
-    return NextResponse.json({ error: "Missing required parameter" }, { status: 400 });
-  }
-
-  // Cache check
-  const cached = await redis.get<DataType>(CACHE_KEYS.myKey(param));
-  if (cached) return NextResponse.json(cached, { headers: { "X-Cache": "HIT" } });
-
-  try {
-    const data = await fetchUpstream(param);
-    await redis.set(CACHE_KEYS.myKey(param), data, { ex: CACHE_TTL.MY_TTL });
-    // Fire-and-forget usage tracking
-    trackApiUsage("my_api").catch(console.error);
-    return NextResponse.json(data, { headers: { "X-Cache": "MISS" } });
-  } catch (error) {
-    console.error("[MyAPI] fetch failed:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
-```
-
-- Return stale cache rather than hard-failing when upstream is unavailable
-- Log errors with `[RouteName]` prefix: `console.error("[Waze]", error)`
-- Consistent error shape: `{ error: "message" }` with appropriate HTTP status
-- Include `X-Cache: HIT | MISS | STALE` header on cacheable responses
-
-### Error Handling
-
-- Wrap all async operations in `try/catch`
-- Fire-and-forget side effects (analytics, usage tracking): `doThing().catch(console.error)`
-- Rate-limited endpoints return `429` with an empty-data body (graceful degradation, not hard failure)
-- Stale Redis cache is preferred over an upstream error response
-
-### Styling
-
-- Tailwind CSS v4 (CSS-first config via `app/globals.css` — no `tailwind.config.*` file)
-- Use `cn()` from `@/lib/utils` to merge conditional classes:
-  ```typescript
-  <div className={cn("base-classes", isActive && "active-classes", className)} />
-  ```
-- CSS custom properties are defined with `oklch()` color values in `globals.css`
-- Dark mode: satellite mode forces dark UI via `effectiveDarkMode = isDarkMode || useSatellite`
-- shadcn/ui components live in `components/ui/` and use CVA (`class-variance-authority`) for variants
-
-### Hooks Pattern
-
-```typescript
-// hooks/useMyFeature.ts
-export function useMyFeature(param: string) {
-  const [data, setData] = useState<DataType | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    // setup
-    return () => {
-      // cleanup: clear timers, cancel animation frames, abort fetches
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [param]);
-
-  return { data };
-}
-```
-
-- Always clean up timers, `requestAnimationFrame` handles, and `watchPosition` IDs in effect cleanup
-- Debounce map-dependent fetches (250–300ms) to avoid over-fetching on pan/zoom
-- Use `useRef` to store the last fetch bounds; only re-fetch when movement exceeds a threshold
-
-## Key Libraries
-
-| Library | Usage |
-|---------|-------|
-| `mapbox-gl` | Map rendering and Directions API |
-| `@upstash/redis` | Server-side caching and rate limiting |
-| `@vercel/blob` | GPX file storage |
-| `zod` | Runtime validation of external API responses |
-| `posthog-js` / `posthog-node` | Client + server analytics |
-| `@radix-ui/*` | Accessible UI primitives (via shadcn/ui) |
-| `lucide-react` | Icon library |
-| `class-variance-authority` | Component variant styling |
-| `clsx` + `tailwind-merge` | Conditional class merging (`cn()`) |
-
-## Environment Variables
+## Commands
 
 ```bash
-NEXT_PUBLIC_MAPBOX_TOKEN        # Mapbox GL JS + Directions API token
-UPSTASH_REDIS_REST_URL          # Upstash Redis endpoint
-UPSTASH_REDIS_REST_TOKEN        # Upstash Redis auth token
-NEXT_PUBLIC_POSTHOG_KEY         # PostHog project API key
-NEXT_PUBLIC_POSTHOG_HOST        # PostHog host (e.g. https://us.posthog.com)
-BLOB_READ_WRITE_TOKEN           # Vercel Blob storage token
-LOCATIONIQ_API_KEY              # LocationIQ geocoding API key
-INBOUND_API_KEY                 # Inbound email API key (feedback + alerts)
-ADMIN_API_KEY                   # Bearer token for /api/admin/* routes
+npm install --no-package-lock   # deps (bun.lock is from upstream; npm works fine)
+npm run dev                     # http://localhost:3000
+npx tsc --noEmit                # type check — must pass
+npm test                        # logic tests (tests/*.test.ts via tsx) — must pass
+npx eslint <files>              # lint what you touched (see "Lint")
+npm run build
+node scripts/build-cameras-es.mjs   # rebuild public/data/cameras-es.json (~3 min, Overpass)
 ```
 
-## Special Notes
+## Testing without a car
 
-1. **Tesla Browser**: Optimized for Tesla's in-car Chromium browser. Avoid hover-only interactions. Test with touch events. The service worker (`public/sw.js`) caches map tiles for offline use.
-2. **Dev Mode**: Add `?dev=true` to the URL to enable tile bounds debug overlay and verbose logging.
-3. **Rate Limiting**: All external API calls (Waze, OSM, LocationIQ) are rate-limited via Redis. Constants are in `lib/redis.ts` (`RATE_LIMITS`, `API_LIMITS`).
-4. **Path Alias**: Always use `@/` for imports from project root (configured in `tsconfig.json`).
-5. **No Tailwind config file**: Tailwind v4 is configured entirely in `app/globals.css`. Do not create `tailwind.config.*`.
-6. **Tile caching**: Map tiles are proxied through `/api/tiles` and cached in Vercel Blob (15-day TTL). Do not bypass this proxy.
-7. **API usage tracking**: Call `trackApiUsage("api_name")` fire-and-forget in routes that consume metered external APIs. Thresholds and alerts are managed in `lib/redis.ts`.
+- **Fixed GPS position:** `http://localhost:3000/?dev=true&lat=40.4168&lng=-3.7038`
+  (dev only, in `hooks/useGeolocation.ts`). Automated browsers usually deny geolocation.
+- **Drive a route:** with `?dev=true`, start navigation and press **Simulate** (bottom right): the
+  car moves one route vertex every 200 ms at a fake 25 m/s. Vertices are unevenly spaced, so voice
+  prompts can bunch up in simulation — an artefact, not a bug.
+- Tap **Start driving** first (it unlocks audio). To see what would be spoken, wrap
+  `speechSynthesis.speak` in the page and log `utterance.text`.
+- Use a ≥ 1280 px wide viewport to look like the car (Tesla browser ≈ 1920×1200).
+- Good test trips in Madrid: Sol → "Aeropuerto Madrid Barajas" (cameras on M-40/A-2, DGT
+  incidents), Alcobendas (`lat=40.5372&lng=-3.6372`) → "Estación de Atocha" (A-1, evening jams).
+- Fast Refresh caveat: changing the **length of a hook's dependency array** breaks that effect
+  until a full reload. If something stops updating after an edit, reload before debugging.
+
+## Architecture
+
+```
+app/page.tsx              The whole driving UI (big file from upstream). Keep it to state and
+                          wiring; put logic in lib/ and hooks/.
+app/api/
+  directions/             Mapbox Directions (driving-traffic): steps, voice instructions and per
+                          segment maxspeed / congestion / duration annotations
+  geocode/                Address search + reverse geocoding (Mapbox Search Box)
+  places/                 POST: category search near the car or along the route ahead
+  police/                 Community police reports + votes (Upstash, or memory without it)
+  road-events/            Live DGT incidents for all of Spain (client filters to the route)
+  recording/, admin/      Upstream leftovers: GPX recording, usage dashboard (needs ADMIN_SECRET)
+lib/
+  navigation.ts           Route maths: index, progress, placeOnPolyline, routeAhead, haversine,
+                          bearing, angleDifference
+  traffic.ts              Congestion runs (colouring), jam detection, faster-route decision
+  roadEvents.ts           DGT DATEX II parser + 3-minute cache (server)
+  roadEventAlerts.ts      Match incidents to route / heading, warning distances, map pins
+  placeSearch.ts          Category search: OCM chargers, Geoportal fuel, Mapbox for the rest
+  mapboxSearch.ts         Search Box client (forward, category, along-route, reverse)
+  chargingStations.ts     Open Charge Map client (server, 1 h cache)
+  fuelPrices.ts           Spanish Ministry fuel prices (server, 30 min cache, 12 MB download)
+  policeReports.ts        Police report store and TTL rules
+  places.ts               Categories, keyword detection ("supercharger" → charging), fuel types,
+                          escapeHtml
+  navLanguage.ts          Languages, every phrase we speak ourselves, spokenDistance()
+  voice.ts                speechSynthesis + WebAudio beep + unlockAudio()
+  units.ts, brand.ts      km/mi formatting; app name (rename the app only in brand.ts)
+hooks/
+  useTurnByTurn           Progress along the route + Mapbox voice instructions
+  useCameraAlerts         Speed cameras ahead (offline dataset)
+  useRoadEvents(+Alerts)  DGT incidents: fetch every 3 min, warn once per incident
+  useTrafficAlerts        Next jam on the route, warn once per jam
+  useFasterRoute          Every 3 min re-route from the car: refresh, or offer a faster way
+  usePoliceReports, useSpeedCameras, useGeolocation, …
+components/               ManeuverBanner (the only trip card while navigating; has End),
+                          NavigateSearch (search + chips + results), warning banners, Map.tsx
+public/data/cameras-es.json   Offline cameras (DGT + Catalonia SCT + OSM), ~400 KB
+public/sw.js              Service worker: Mapbox tiles + camera data (cache names `tbn-*`)
+tests/                    Logic tests: plain tsx scripts that print PASS/FAIL
+```
+
+Conventions: `@/` imports; named exports (pages use default); `tbn-` prefix for localStorage keys
+and caches; any external text put into HTML (map popups) goes through `escapeHtml`. Map markers are
+DOM markers — cap any new marker layer (we keep ≤ ~120) because the car browser is slow. Hooks
+passed new arrays/objects every render cause effect loops (the map redraws routes on every new
+`routes` array) — memoise.
+
+## Data sources
+
+| What | Source | Notes |
+|---|---|---|
+| Map, directions, voice, live traffic | Mapbox | `NEXT_PUBLIC_MAPBOX_TOKEN`. Account is on **demo access** (no card): lower usage caps, token can't be rotated |
+| Address & place search | Mapbox Search Box | Same token. Along-route search: `route` (polyline6) + `sar_type=isochrone` |
+| Speed cameras | DGT DATEX II + Catalonia SCT + OSM | Static file, rebuilt by script. SCT uses UTM 31N with broken decimals — the script repairs them |
+| Road incidents | DGT DATEX II situations (`nap.dgt.es/datex2/v3/dgt/SituationPublication/datex2_v36.xml`, redirects to newer versions) | Spain except Catalonia / Basque Country |
+| EV chargers | Open Charge Map | `OPEN_CHARGE_MAP_KEY`. Tesla = operator ids **23 and 3534** (both) |
+| Fuel prices | Ministerio, Geoportal Gasolineras REST | No key; ~11.4k stations |
+| Police | Our own crowdsourcing | Needs Upstash on serverless hosting |
+
+Ruled out: Google Places / Apple Maps POIs (their terms forbid showing them on another map), Waze
+(blocked), LocationIQ (upstream searched only the US with it — removed).
+
+## Decisions and thresholds (change deliberately)
+
+- **Speed cameras:** cone ±35° ahead of heading; warn at clamp(speed × 20 s, 300 m, 800 m);
+  re-alert after 10 min; icons from zoom 13 (warnings use all cameras regardless of zoom).
+- **Police reports:** live 30 min after the last confirmation, at most 3 h; a "not there" vote caps
+  the rest at 10 min; removed when down > up; reports within 200 m merge; 6 reports / 10 min per IP.
+- **DGT incidents:**
+  - one event per situation; the kind is picked by priority (closure > accident > fire > …);
+  - short-lived kinds (accident, stopped vehicle, obstacle, slow traffic, fog) older than 24 h are
+    dropped — DGT leaves some open for months;
+  - on a route an incident must be within 40 m of the line *and* in our direction: a stretch's
+    from → to must run our way, otherwise its TPEG direction must be within 70° of the route bearing;
+  - warning distances: closure 3 km; accident, fire, slow traffic 2 km; obstacle, rockfall, flood
+    1.5 km; stopped vehicle, lane closed 1 km; roadworks 800 m;
+  - without a route, only hazards (not roadworks, lane closures, stopped cars) in a ±30° cone are
+    shown and warned;
+  - **while navigating, DGT `slowTraffic` isn't announced** — the Mapbox jam warning covers it.
+- **Traffic jams (Mapbox):** heavy/severe segments, gaps ≤ 200 m merged, ≥ 300 m long and ≥ 30 s
+  delay (60 s missed a real A-1 jam). Delay = annotated duration − time at 90 % of the speed limit
+  (50 km/h when unknown). Warned 2 km ahead, once per jam start location.
+- **Faster route:** every 3 min while navigating with > 3 km left. A fresh route overlapping ≥ 85 %
+  with what's left of ours is "the same way" → silently replaces it (fresh traffic and ETA). A
+  different way saving ≥ 3 min → card + voice, auto-dismissed after 30 s; a dismissed way isn't
+  offered again during that trip.
+- **Search:** category keywords (en/es/ru) trigger category search; "supercharger"/"tesla" →
+  Tesla-only within ~30 km. Chargers rank fast/Tesla first. Along a route: ≤ 1.5 km off the road,
+  sorted by distance ahead; picking a result while navigating reroutes straight to it.
+- **Map while driving:** only the chosen route (plus an offered faster one), no refit on route
+  updates (`fitRoutes={!destination}`); search results fit the view and pause auto-centering.
+
+## Lint
+
+`npx eslint app/page.tsx components/Map.tsx` reports ~7 errors inherited from upstream
+(set-state-in-effect, Date.now in render, …). Don't add new ones: compare the count before and
+after your change. New files should lint clean.
+
+## Status
+
+Done: offline cameras, police reports, turn-by-turn + voice (en/es/ru), speedometer with limits,
+start screen, unified search with categories and along-route search, chargers and fuel prices,
+DGT incidents, live traffic (colours, jam warnings, faster route), km/mi, rebrand.
+
+Open / known gaps:
+- **Never tested in a real Tesla yet** (GPS quality, es/ru speech voices, touch, performance).
+- **Not deployed.** Plan: Vercel (EU region) with env vars from `.env.example` plus Upstash for
+  police reports. The owner has a Vercel MCP server configured (loads in a new Claude session).
+- `lib/redis.ts` creates an Upstash client even without env (dev warnings; usage tracking fails
+  silently).
+- Catalonia (SCT) and Basque Country incident feeds not integrated.
+- Language/units changes apply on the next route calculation, not mid-route.
+- No automatic re-route around a DGT closure (warning only).
+- Upstream leftovers to prune: GPX record/view pages, admin dashboard, Waze naming in page.tsx
+  (`showWazeAlerts`, `alertsLoading`, `WazeAlert` type now used for police + DGT pins).

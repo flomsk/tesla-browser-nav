@@ -201,6 +201,25 @@ export function useGeolocation(enableHighAccuracy = true) {
   }, []);
 
   useEffect(() => {
+    // Dev only: ?dev=true&lat=..&lng=.. fixes the position (browsers without GPS, automated tests).
+    // Use the dev "Simulate" button to drive a route from there.
+    const params = new URLSearchParams(window.location.search);
+    const fakeLat = parseFloat(params.get("lat") ?? "");
+    const fakeLng = parseFloat(params.get("lng") ?? "");
+    if (params.get("dev") === "true" && Number.isFinite(fakeLat) && Number.isFinite(fakeLng)) {
+      const report = () =>
+        updatePosition({
+          coords: { latitude: fakeLat, longitude: fakeLng, accuracy: 5, heading: null, speed: null, altitude: null, altitudeAccuracy: null },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      const first = setTimeout(report, 0);
+      const timer = setInterval(report, 1000);
+      return () => {
+        clearTimeout(first);
+        clearInterval(timer);
+      };
+    }
+
     if (!navigator.geolocation) {
       setState((prev) => ({
         ...prev,
