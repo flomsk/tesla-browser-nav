@@ -7,7 +7,7 @@ import { formatDuration, getOrCreateSessionToken } from "@/lib/gpx";
 import type { RecordingSession } from "@/types/gpx";
 import Link from "next/link";
 
-const SESSIONS_STORAGE_KEY = "teslanav-recordings";
+const SESSIONS_STORAGE_KEY = "tbn-recordings";
 
 // Load sessions from localStorage (lazy initialization)
 function loadSessionsFromStorage(): RecordingSession[] {

@@ -11,7 +11,7 @@ interface UsePoliceReportsOptions {
   minZoomLevel?: number;
 }
 
-const DEVICE_ID_KEY = "teslanav-device-id";
+const DEVICE_ID_KEY = "tbn-device-id";
 
 // Anonymous per-browser id so the server can count one vote per device
 function getDeviceId(): string {

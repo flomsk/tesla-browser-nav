@@ -1,7 +1,7 @@
 "use client";
 
+import { APP_NAME } from "@/lib/brand";
 import { useState, useCallback } from "react";
-import Image from "next/image";
 import posthog from "posthog-js";
 
 interface FeedbackModalProps {
@@ -105,7 +105,7 @@ export function FeedbackModal({ isOpen, onClose, isDarkMode }: FeedbackModalProp
               <div>
                 <h2 className="text-2xl font-semibold">Send Feedback</h2>
                 <p className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Help us improve TeslaNav
+                  Help us improve {APP_NAME}
                 </p>
               </div>
             </div>
@@ -201,33 +201,6 @@ export function FeedbackModal({ isOpen, onClose, isDarkMode }: FeedbackModalProp
                 <p className={`text-sm mt-2 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
                   Include if you&apos;d like a response
                 </p>
-              </div>
-
-              {/* Donation QR Code Section */}
-              <div className={`
-                flex flex-col sm:flex-row items-center gap-5 p-5 rounded-xl
-                ${isDarkMode ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-emerald-50 border border-emerald-200"}
-              `}>
-                <div className="flex-shrink-0">
-                  <Image
-                    src="/teslanav-donation-qrcode.png"
-                    alt="Donation QR Code"
-                    width={120}
-                    height={120}
-                    className="rounded-lg"
-                  />
-                </div>
-                <div className="text-center sm:text-left">
-                  <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
-                    <span className="text-2xl">⚡</span>
-                    <p className={`text-lg font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
-                      Expedite Your Request
-                    </p>
-                  </div>
-                  <p className={`text-base ${isDarkMode ? "text-emerald-200/80" : "text-emerald-600"}`}>
-                    Donate to help support TeslaNav and your feature request or bug fix will be prioritized!
-                  </p>
-                </div>
               </div>
 
               {/* Honeypot field - hidden from users, only bots will fill this */}

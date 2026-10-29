@@ -7,7 +7,7 @@ export const NAV_LANGUAGES = [
 
 export type NavLanguage = (typeof NAV_LANGUAGES)[number]["code"];
 
-export const NAV_LANGUAGE_STORAGE_KEY = "teslanav-nav-language";
+export const NAV_LANGUAGE_STORAGE_KEY = "tbn-nav-language";
 
 export function isNavLanguage(value: string | null): value is NavLanguage {
   return NAV_LANGUAGES.some((l) => l.code === value);

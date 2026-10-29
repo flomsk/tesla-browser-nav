@@ -1,7 +1,7 @@
 {
-  "name": "Tesla Nav",
-  "short_name": "TeslaNav",
-  "description": "Navigation with Waze alerts for Tesla",
+  "name": "Tesla Browser Nav",
+  "short_name": "BrowserNav",
+  "description": "Browser navigator for the Tesla in-car browser",
   "start_url": "/",
   "display": "fullscreen",
   "orientation": "landscape",
@@ -15,4 +15,3 @@
     }
   ]
 }
-

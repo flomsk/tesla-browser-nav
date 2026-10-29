@@ -1,6 +1,6 @@
-# AGENTS.md - TeslaNav Codebase Guidelines
+# AGENTS.md - Tesla Browser Nav Codebase Guidelines
 
-TeslaNav is a navigation web app optimized for Tesla's in-car browser. Built with Next.js 16 (App Router), React 19, TypeScript 5, and Tailwind CSS 4.
+Tesla Browser Nav is a navigation web app optimized for Tesla's in-car browser. Built with Next.js 16 (App Router), React 19, TypeScript 5, and Tailwind CSS 4.
 
 ## Build, Lint & Test Commands
 
@@ -65,7 +65,7 @@ import type { MyType } from "@/types/foo";      // 6. Type-only imports last
 | API routes | route.ts | `app/api/directions/route.ts` |
 | Constants | UPPER_SNAKE_CASE | `CACHE_TTL`, `RATE_LIMITS` |
 | Functions/variables | camelCase | `fetchDirections`, `handleClick` |
-| localStorage keys | `teslanav-` prefix | `teslanav-theme`, `teslanav-follow-mode` |
+| localStorage keys | `tbn-` prefix | `tbn-theme`, `tbn-follow-mode` |
 
 ### TypeScript Guidelines
 
@@ -112,7 +112,7 @@ export const MyComponent = forwardRef<HTMLDivElement, MyComponentProps>(
 
 - `useState` with lazy initializer for localStorage-persisted preferences:
   ```typescript
-  const [theme, setTheme] = useState(() => localStorage.getItem("teslanav-theme") ?? "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("tbn-theme") ?? "dark");
   ```
 - `useRef` for values that should not trigger re-renders (animation state, timers, previous values)
 - Dark mode is passed as a prop (`isDarkMode: boolean`), not via context or CSS class

@@ -1,11 +1,11 @@
-// TeslaNav Service Worker for Map Tile Caching
+// Tesla Browser Nav service worker for map tile caching
 // Caches Mapbox tiles for 7 days to reduce API calls
 
-const CACHE_NAME = 'teslanav-tiles-v1';
+const CACHE_NAME = 'tbn-tiles-v1';
 const TILE_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 // Static datasets (speed cameras) - network first, fall back to cache when offline
-const DATA_CACHE_NAME = 'teslanav-data-v1';
+const DATA_CACHE_NAME = 'tbn-data-v1';
 const DATA_URLS = ['/data/cameras-es.json'];
 const ACTIVE_CACHES = [CACHE_NAME, DATA_CACHE_NAME];
 
@@ -37,7 +37,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name.startsWith('teslanav-') && !ACTIVE_CACHES.includes(name))
+          .filter((name) => (name.startsWith('tbn-') || name.startsWith('teslanav-')) && !ACTIVE_CACHES.includes(name))
           .map((name) => {
             console.log('[SW] Deleting old cache:', name);
             return caches.delete(name);

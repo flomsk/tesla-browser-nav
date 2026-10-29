@@ -54,7 +54,7 @@ export default function AdminPage() {
 
   // Check if we have a stored secret
   useEffect(() => {
-    const storedSecret = localStorage.getItem("teslanav-admin-secret");
+    const storedSecret = localStorage.getItem("tbn-admin-secret");
     if (storedSecret) {
       setSecret(storedSecret);
       fetchUsage(storedSecret);
@@ -75,7 +75,7 @@ export default function AdminPage() {
       if (response.status === 401) {
         setError("Invalid admin secret");
         setIsAuthenticated(false);
-        localStorage.removeItem("teslanav-admin-secret");
+        localStorage.removeItem("tbn-admin-secret");
         return;
       }
 
@@ -87,7 +87,7 @@ export default function AdminPage() {
       setData(usageData);
       setIsAuthenticated(true);
       setLastRefresh(new Date());
-      localStorage.setItem("teslanav-admin-secret", adminSecret);
+      localStorage.setItem("tbn-admin-secret", adminSecret);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -104,7 +104,7 @@ export default function AdminPage() {
     setIsAuthenticated(false);
     setData(null);
     setSecret("");
-    localStorage.removeItem("teslanav-admin-secret");
+    localStorage.removeItem("tbn-admin-secret");
   };
 
   const handleSyncUsage = async () => {
@@ -204,7 +204,7 @@ export default function AdminPage() {
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-white">Admin Access</h1>
-                <p className="text-sm text-gray-500">TeslaNav Dashboard</p>
+                <p className="text-sm text-gray-500">Tesla Browser Nav Dashboard</p>
               </div>
             </div>
 
@@ -251,7 +251,7 @@ export default function AdminPage() {
               T
             </div>
             <div>
-              <h1 className="font-semibold">TeslaNav Admin</h1>
+              <h1 className="font-semibold">Tesla Browser Nav Admin</h1>
               <p className="text-sm text-gray-500">API Usage Dashboard</p>
             </div>
           </div>
@@ -421,7 +421,7 @@ export default function AdminPage() {
             />
             <button
               onClick={() => {
-                localStorage.setItem("teslanav-notify-email", notifyEmail);
+                localStorage.setItem("tbn-notify-email", notifyEmail);
                 alert("Email saved! Alerts will be sent when thresholds are crossed.");
               }}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"

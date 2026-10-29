@@ -1,5 +1,6 @@
 "use client";
 
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
 import { useState, useEffect } from "react";
 import posthog from "posthog-js";
 import { ShieldExclamationIcon, MapIcon } from "@heroicons/react/24/solid";
@@ -22,8 +23,6 @@ interface SettingsModalProps {
   onToggleSatellite: (value: boolean) => void;
   showAvatarPulse: boolean;
   onToggleAvatarPulse: (value: boolean) => void;
-  showSupportBanner: boolean;
-  onToggleSupportBanner: (value: boolean) => void;
   // Police alert settings
   policeAlertDistance: number;
   onPoliceAlertDistanceChange: (value: number) => void;
@@ -56,8 +55,6 @@ export function SettingsModal({
   onToggleSatellite,
   showAvatarPulse,
   onToggleAvatarPulse,
-  showSupportBanner,
-  onToggleSupportBanner,
   policeAlertDistance,
   onPoliceAlertDistanceChange,
   policeAlertSound,
@@ -150,44 +147,6 @@ export function SettingsModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-lg mx-auto space-y-8">
-            {/* Sponsor Section */}
-            <div
-              className={`
-                p-5 rounded-xl border-2 border-dashed
-                ${isDarkMode 
-                  ? "border-pink-500/50 bg-pink-500/10" 
-                  : "border-pink-400/50 bg-pink-50"
-                }
-              `}
-            >
-              <div className="flex flex-col items-center text-center gap-4">
-                <span className="text-3xl">❤️</span>
-                <div>
-                  <div className="text-lg font-semibold">Help Sponsor This Project</div>
-                  <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                    TeslaNav will always be free and ad-free. Your support helps keep it that way!
-                  </div>
-                </div>
-                {/* QR Code */}
-                <div 
-                  className="bg-white p-3 rounded-xl cursor-pointer hover:scale-105 transition-transform"
-                  onClick={() => {
-                    posthog.capture("sponsor_qr_clicked");
-                    window.open("https://buy.stripe.com/9B68wPg5wavU3Px3Tb7EQ0c", "_blank");
-                  }}
-                >
-                  <img 
-                    src="/teslanav-donation-qrcode.png" 
-                    alt="Scan to donate" 
-                    className="w-40 h-40"
-                  />
-                </div>
-                <div className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                  Scan QR code or tap to donate
-                </div>
-              </div>
-            </div>
-
             {/* Map Style Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -231,7 +190,7 @@ export function SettingsModal({
               </h3>
               
               <div className="space-y-4">
-                {/* Waze Alerts Toggle */}
+                {/* Police reports toggle */}
                 <div className={`
                   flex items-center justify-between p-5 rounded-xl
                   ${isDarkMode ? "bg-white/5" : "bg-black/5"}
@@ -239,9 +198,9 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <ShieldExclamationIcon className="w-8 h-8 text-blue-500" />
                     <div>
-                      <div className="text-lg font-medium">Waze Alerts</div>
+                      <div className="text-lg font-medium">Police Reports</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Police, accidents, hazards, road closures
+                        Police reported by drivers
                       </div>
                     </div>
                   </div>
@@ -268,7 +227,7 @@ export function SettingsModal({
                     <div>
                       <div className="text-lg font-medium">Speed Cameras</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Speed & red light cameras from OpenStreetMap
+                        Speed, average-speed and red light cameras (DGT, Catalonia, OpenStreetMap)
                       </div>
                     </div>
                   </div>
@@ -500,31 +459,6 @@ export function SettingsModal({
                   />
                 </div>
 
-                {/* Support Banner Toggle */}
-                <div className={`
-                  flex items-center justify-between p-5 rounded-xl
-                  ${isDarkMode ? "bg-white/5" : "bg-black/5"}
-                `}>
-                  <div className="flex items-center gap-4">
-                    <span className="text-3xl">❤️</span>
-                    <div>
-                      <div className="text-lg font-medium">Support Banner</div>
-                      <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Show &quot;Support this project&quot; in top left
-                      </div>
-                    </div>
-                  </div>
-                  <Toggle
-                    enabled={showSupportBanner}
-                    onToggle={(value) => {
-                      onToggleSupportBanner(value);
-                      posthog.capture("support_banner_toggled", {
-                        banner_enabled: value,
-                      });
-                    }}
-                    isDarkMode={isDarkMode}
-                  />
-                </div>
               </div>
             </div>
 
@@ -580,72 +514,12 @@ export function SettingsModal({
                 p-5 rounded-xl
                 ${isDarkMode ? "bg-white/5" : "bg-black/5"}
               `}>
-                <div className="text-lg font-medium">TeslaNav</div>
+                <div className="text-lg font-medium">{APP_NAME}</div>
                 <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Navigation with Waze alerts for Tesla
+                  {APP_DESCRIPTION}
                 </div>
-                <div className={`text-base mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Made by{" "}
-                  <a 
-                    href="https://x.com/ryanvogel" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:underline"
-                  >
-                    Ryan Vogel
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Known Issues Section */}
-            <div>
-              <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Known Issues
-              </h3>
-              <div className={`
-                p-5 rounded-xl
-                ${isDarkMode ? "bg-amber-500/10 border border-amber-500/20" : "bg-amber-50 border border-amber-200"}
-              `}>
-                <div className="flex items-center gap-4">
-                  <span className="text-3xl">🔧</span>
-                  <div>
-                    <div className="text-lg font-medium">Search & Navigation</div>
-                    <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                      We are aware that the search and navigation functionality is currently not working as expected. We&apos;re actively working on a fix. Thank you for your patience!
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Support Section */}
-            <div>
-              <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Support
-              </h3>
-              <div className={`
-                p-5 rounded-xl
-                ${isDarkMode ? "bg-white/5" : "bg-black/5"}
-              `}>
-                <div className="flex items-center gap-4">
-                  <span className="text-3xl">💬</span>
-                  <div>
-                    <div className="text-lg font-medium">Feature Requests & Bug Reports</div>
-                    <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                      Have an idea or found a bug? Let us know!
-                    </div>
-                    <a 
-                      href="mailto:ryan@teslanav.com"
-                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 rounded-lg bg-blue-500 text-white text-base font-medium hover:bg-blue-600 transition-colors"
-                      onClick={() => {
-                        posthog.capture("support_email_clicked");
-                      }}
-                    >
-                      <EmailIcon className="w-5 h-5" />
-                      ryan@teslanav.com
-                    </a>
-                  </div>
+                <div className={`text-sm mt-2 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                  Based on teslanav by Ryan Vogel · PolyForm Noncommercial 1.0.0
                 </div>
               </div>
             </div>
@@ -697,13 +571,6 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
-function EmailIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-    </svg>
-  );
-}
 
 function ExternalLinkIcon({ className }: { className?: string }) {
   return (

@@ -9,7 +9,7 @@ function useServiceWorker() {
       navigator.serviceWorker
         .register("/sw.js")
         .then((registration) => {
-          console.log("[TeslaNav] Service Worker registered for tile caching");
+          console.log("[tbn] Service Worker registered for tile caching");
           
           // Check for updates periodically
           setInterval(() => {
@@ -17,7 +17,7 @@ function useServiceWorker() {
           }, 60 * 60 * 1000); // Check every hour
         })
         .catch((error) => {
-          console.log("[TeslaNav] Service Worker registration failed:", error);
+          console.log("[tbn] Service Worker registration failed:", error);
         });
     }
   }, []);

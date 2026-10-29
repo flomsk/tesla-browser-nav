@@ -25,7 +25,7 @@ const OUT_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "
 async function fetchText(url, init) {
   const response = await fetch(url, {
     ...init,
-    headers: { "User-Agent": "TeslaNav camera dataset builder", ...init?.headers },
+    headers: { "User-Agent": "tesla-browser-nav camera dataset builder", ...init?.headers },
   });
   if (!response.ok) {
     throw new Error(`${url} returned ${response.status}`);

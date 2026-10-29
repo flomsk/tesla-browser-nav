@@ -21,15 +21,6 @@ const nextConfig: NextConfig = {
         source: "/ingest/:path*",
         destination: "https://us.i.posthog.com/:path*",
       },
-      // DataFast rewrites
-      {
-        source: "/js/script.js",
-        destination: "https://datafa.st/js/script.js",
-      },
-      {
-        source: "/api/events",
-        destination: "https://datafa.st/api/events",
-      },
     ];
   },
   // This is required to support PostHog trailing slash API requests

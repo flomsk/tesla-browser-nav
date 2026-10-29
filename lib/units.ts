@@ -1,7 +1,7 @@
 export type UnitSystem = "metric" | "imperial";
 
 export const DEFAULT_UNIT_SYSTEM: UnitSystem = "metric";
-export const UNIT_SYSTEM_STORAGE_KEY = "teslanav-units";
+export const UNIT_SYSTEM_STORAGE_KEY = "tbn-units";
 
 const METERS_PER_MILE = 1609.34;
 const KMH_PER_MPH = 1.609344;

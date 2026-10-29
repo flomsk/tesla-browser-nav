@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Map, type MapRef } from "@/components/Map";
 import { SettingsModal } from "@/components/SettingsModal";
 import { FeedbackModal } from "@/components/FeedbackModal";
-import { ChangelogModal } from "@/components/ChangelogModal";
 import { NavigateSearch } from "@/components/NavigateSearch";
 import { RouteSelector } from "@/components/RouteSelector";
 import { useGeolocation } from "@/hooks/useGeolocation";
@@ -35,6 +34,7 @@ import type { UnitSystem } from "@/lib/units";
 import type { MapBounds } from "@/types/waze";
 import type { RouteData, RoutesResponse } from "@/types/route";
 import Image from "next/image";
+import { APP_NAME, APP_SHORT_NAME } from "@/lib/brand";
 import posthog from "posthog-js";
 import { ShieldExclamationIcon, ExclamationTriangleIcon, NoSymbolIcon } from "@heroicons/react/24/solid";
 
@@ -69,7 +69,7 @@ export default function Home() {
   // This ensures the map initializes with the correct theme before first render
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
-      const savedTheme = localStorage.getItem("teslanav-theme");
+      const savedTheme = localStorage.getItem("tbn-theme");
       if (savedTheme !== null) {
         return savedTheme === "dark";
       }
@@ -81,7 +81,7 @@ export default function Home() {
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [followMode, setFollowMode] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-follow-mode");
+      const saved = localStorage.getItem("tbn-follow-mode");
       return saved === "true";
     }
     return false;
@@ -93,33 +93,26 @@ export default function Home() {
   const [showSpeedCameras, setShowSpeedCameras] = useState(true);
   const [showTraffic, setShowTraffic] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-traffic");
+      const saved = localStorage.getItem("tbn-traffic");
       return saved !== null ? saved === "true" : true;
     }
     return true;
   });
   const [useSatellite, setUseSatellite] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-satellite");
+      const saved = localStorage.getItem("tbn-satellite");
       return saved === "true";
     }
     return false;
   });
   const [use3DMode, setUse3DMode] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-3d-mode");
+      const saved = localStorage.getItem("tbn-3d-mode");
       return saved === "true";
     }
     return false;
   });
   const [showAvatarPulse, setShowAvatarPulse] = useState(true);
-  const [showSupportBanner, setShowSupportBanner] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-support-banner");
-      return saved !== null ? saved === "true" : true; // Default to showing the banner
-    }
-    return true;
-  });
   const mapRef = useRef<MapRef>(null);
 
   const [destination, setDestination] = useState<{ lng: number; lat: number; name: string } | null>(null);
@@ -135,8 +128,6 @@ export default function Home() {
   // Preview location - shown on map when user searches but hasn't started navigation yet
   const [previewLocation, setPreviewLocation] = useState<{ lng: number; lat: number; name: string } | null>(null);
   // Mobile detection
-  const [isMobile, setIsMobile] = useState(false);
-  const [dismissedMobileWarning, setDismissedMobileWarning] = useState(false);
   
   const [units, setUnits] = useState<UnitSystem>(() => {
     if (typeof window !== "undefined") {
@@ -157,7 +148,7 @@ export default function Home() {
   const speechLang = speechLangFor(navLanguage);
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("teslanav-voice") !== "false";
+      return localStorage.getItem("tbn-voice") !== "false";
     }
     return true;
   });
@@ -167,14 +158,14 @@ export default function Home() {
   // Police alert settings - use lazy init to read from localStorage immediately
   const [policeAlertDistance, setPoliceAlertDistance] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-police-distance");
+      const saved = localStorage.getItem("tbn-police-distance");
       return saved !== null ? parseInt(saved, 10) : 500;
     }
     return 500; // meters, 0 = off
   });
   const [policeAlertSound, setPoliceAlertSound] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("teslanav-police-sound");
+      const saved = localStorage.getItem("tbn-police-sound");
       return saved === "true";
     }
     return false; // off by default
@@ -252,7 +243,7 @@ export default function Home() {
 
   const handleToggleVoice = useCallback((value: boolean) => {
     setVoiceEnabled(value);
-    localStorage.setItem("teslanav-voice", value.toString());
+    localStorage.setItem("tbn-voice", value.toString());
     if (!value && isSpeechSupported()) window.speechSynthesis.cancel();
   }, []);
 
@@ -523,18 +514,23 @@ export default function Home() {
       // Set as preview location (user can then choose to navigate)
       setPreviewLocation({ lng: contextMenu.lng, lat: contextMenu.lat, name });
       setContextMenu(null);
-      
+
+      // Fetch routes for the preview location (Navigate stays disabled without them)
+      if (latitude && longitude) {
+        fetchRoute(contextMenu.lng, contextMenu.lat);
+      }
+
       // Center map on the selected location
       if (mapRef.current) {
         mapRef.current.recenter(contextMenu.lng, contextMenu.lat);
       }
-      
+
       posthog.capture("location_selected_from_long_press", {
         place_name: name,
         coordinates: { lng: contextMenu.lng, lat: contextMenu.lat },
       });
     }
-  }, [contextMenu]);
+  }, [contextMenu, latitude, longitude, fetchRoute]);
 
   // Close context menu
   const handleCloseContextMenu = useCallback(() => {
@@ -549,35 +545,13 @@ export default function Home() {
       alertAudioRef.current = new Audio("/alert-sound.mp3");
       
       // Apply saved follow mode to map when it's ready
-      const savedFollowMode = localStorage.getItem("teslanav-follow-mode");
+      const savedFollowMode = localStorage.getItem("tbn-follow-mode");
       if (savedFollowMode === "true") {
         setTimeout(() => {
           if (mapRef.current) {
             mapRef.current.setFollowMode(true);
           }
         }, 100);
-      }
-    }
-  }, []);
-
-  // Detect mobile devices (but not Tesla browser)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const userAgent = navigator.userAgent.toLowerCase();
-      // Check if it's a Tesla browser (Tesla browsers identify themselves)
-      const isTeslaBrowser = userAgent.includes("tesla") || userAgent.includes("qtcarbrowser");
-      // Check if it's a mobile device
-      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
-      // Also check screen width as a fallback
-      const isSmallScreen = window.innerWidth < 768;
-      
-      // Show warning if mobile and NOT Tesla browser
-      setIsMobile((isMobileDevice || isSmallScreen) && !isTeslaBrowser);
-      
-      // Check if user previously dismissed the warning
-      const dismissed = localStorage.getItem("teslanav-mobile-dismissed");
-      if (dismissed === "true") {
-        setDismissedMobileWarning(true);
       }
     }
   }, []);
@@ -594,7 +568,7 @@ export default function Home() {
   const handleToggleSatellite = useCallback((value: boolean) => {
     setUseSatellite(value);
     if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-satellite", value.toString());
+      localStorage.setItem("tbn-satellite", value.toString());
     }
   }, []);
 
@@ -602,7 +576,7 @@ export default function Home() {
   const handleToggle3DMode = useCallback((value: boolean) => {
     setUse3DMode(value);
     if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-3d-mode", value.toString());
+      localStorage.setItem("tbn-3d-mode", value.toString());
     }
     // Auto-enable follow mode when 3D is enabled for the best experience
     if (value && !followMode) {
@@ -611,7 +585,7 @@ export default function Home() {
         mapRef.current.setFollowMode(true);
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem("teslanav-follow-mode", "true");
+        localStorage.setItem("tbn-follow-mode", "true");
       }
     }
   }, [followMode]);
@@ -620,7 +594,7 @@ export default function Home() {
   const handleToggleTraffic = useCallback((value: boolean) => {
     setShowTraffic(value);
     if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-traffic", value.toString());
+      localStorage.setItem("tbn-traffic", value.toString());
     }
   }, []);
 
@@ -628,7 +602,7 @@ export default function Home() {
   const handlePoliceAlertDistanceChange = useCallback((value: number) => {
     setPoliceAlertDistance(value);
     if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-police-distance", value.toString());
+      localStorage.setItem("tbn-police-distance", value.toString());
     }
     // Clear alerted IDs when changing distance so alerts can re-trigger
     alertedPoliceIdsRef.current.clear();
@@ -647,17 +621,10 @@ export default function Home() {
   const handleTogglePoliceAlertSound = useCallback((value: boolean) => {
     setPoliceAlertSound(value);
     if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-police-sound", value.toString());
+      localStorage.setItem("tbn-police-sound", value.toString());
     }
   }, []);
 
-  // Save support banner preference to localStorage
-  const handleToggleSupportBanner = useCallback((value: boolean) => {
-    setShowSupportBanner(value);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("teslanav-support-banner", value.toString());
-    }
-  }, []);
 
   // Calculate bearing between two points
   const calculateBearing = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -926,7 +893,7 @@ export default function Home() {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
       const handler = (e: MediaQueryListEvent) => {
         // Only apply system preference if user hasn't explicitly set one
-        const savedTheme = localStorage.getItem("teslanav-theme");
+        const savedTheme = localStorage.getItem("tbn-theme");
         if (savedTheme === null) {
           setIsDarkMode(e.matches);
         }
@@ -965,7 +932,7 @@ export default function Home() {
 
       // Persist to localStorage
       if (typeof window !== "undefined") {
-        localStorage.setItem("teslanav-theme", newValue ? "dark" : "light");
+        localStorage.setItem("tbn-theme", newValue ? "dark" : "light");
       }
 
       // Track dark mode toggle
@@ -986,7 +953,7 @@ export default function Home() {
 
       // Save to localStorage
       if (typeof window !== "undefined") {
-        localStorage.setItem("teslanav-follow-mode", newValue.toString());
+        localStorage.setItem("tbn-follow-mode", newValue.toString());
       }
 
       // Track follow mode toggle
@@ -1054,17 +1021,17 @@ export default function Home() {
           />
         )}
         <div className="flex flex-col items-center gap-6">
-          {/* TeslaNav Logo/Title */}
+          {/* App logo/title */}
           <div className="flex items-center gap-3">
             <Image
               src="/maps-avatar.jpg"
-              alt="TeslaNav"
+              alt={APP_NAME}
               width={48}
               height={48}
               className="rounded-lg"
             />
             <div className="flex flex-col">
-              <span className="text-2xl font-bold text-white tracking-wide">TeslaNav</span>
+              <span className="text-2xl font-bold text-white tracking-wide">{APP_NAME}</span>
               <span className="text-xs text-gray-500">v0.3.0</span>
             </div>
           </div>
@@ -1457,7 +1424,7 @@ export default function Home() {
             />
             <div className="flex flex-col">
               <span className="text-sm font-bold tracking-wide">
-                TeslaNav
+                {APP_SHORT_NAME}
               </span>
               <span className={`text-[10px] ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
                 v0.3.0
@@ -1775,8 +1742,6 @@ export default function Home() {
         onToggleSatellite={handleToggleSatellite}
         showAvatarPulse={showAvatarPulse}
         onToggleAvatarPulse={setShowAvatarPulse}
-        showSupportBanner={showSupportBanner}
-        onToggleSupportBanner={handleToggleSupportBanner}
         policeAlertDistance={policeAlertDistance}
         onPoliceAlertDistanceChange={handlePoliceAlertDistanceChange}
         policeAlertSound={policeAlertSound}
@@ -1799,7 +1764,6 @@ export default function Home() {
       />
 
       {/* Changelog Modal - Shows once per version */}
-      <ChangelogModal isDarkMode={effectiveDarkMode} />
 
       {/* Global styles for police alert animations */}
       <style jsx global>{`
@@ -1880,70 +1844,6 @@ export default function Home() {
         }
       `}</style>
 
-      {/* Mobile Warning Overlay */}
-      {isMobile && !dismissedMobileWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-          <div className="max-w-md w-full bg-[#1a1a1a] rounded-3xl border border-white/10 shadow-2xl overflow-hidden">
-            {/* Preview image at top */}
-            <div className="relative w-full aspect-[16/9] overflow-hidden">
-              <Image
-                src="/upload.png"
-                alt="TeslaNav Preview"
-                fill
-                className="object-cover"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent" />
-            </div>
-            
-            {/* Header text */}
-            <div className="relative px-6 pt-4 pb-6 text-center -mt-8">
-              <h2 className="text-xl font-semibold text-white mb-2">
-                Best on Desktop or Tesla
-              </h2>
-              <p className="text-gray-400 text-sm leading-relaxed">
-                TeslaNav is designed for the Tesla in-car browser or desktop screens. The experience may be limited on mobile devices.
-              </p>
-            </div>
-
-            {/* Content */}
-            <div className="px-6 pb-6 space-y-4">
-              <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5">
-                <TeslaIcon className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-white text-sm font-medium">Tesla Browser</p>
-                  <p className="text-gray-400 text-xs">Open teslanav.com in your Tesla&apos;s browser for the best experience</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5">
-                <DesktopIcon className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-white text-sm font-medium">Desktop Browser</p>
-                  <p className="text-gray-400 text-xs">Full features available on Chrome, Safari, Firefox, or Edge</p>
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex flex-col gap-2 pt-2">
-                <button
-                  onClick={() => {
-                    setDismissedMobileWarning(true);
-                    localStorage.setItem("teslanav-mobile-dismissed", "true");
-                    posthog.capture("mobile_warning_dismissed", { action: "continue_anyway" });
-                  }}
-                  className="w-full py-3 rounded-xl bg-white/10 text-white font-medium hover:bg-white/20 transition-colors"
-                >
-                  Continue Anyway
-                </button>
-                <p className="text-center text-gray-500 text-xs">
-                  Some features may not work as expected
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
@@ -2054,21 +1954,7 @@ function LocationSearchIcon({ className }: { className?: string }) {
   );
 }
 
-function DesktopIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
-    </svg>
-  );
-}
 
-function TeslaIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 5.362l2.475-3.026s4.245.09 8.471 2.054c-1.082 1.636-3.231 2.438-3.231 2.438-.146-1.439-1.154-1.79-4.354-1.79L12 24 8.619 5.038c-3.18 0-4.188.351-4.335 1.79 0 0-2.148-.802-3.23-2.438C5.28 2.426 9.525 2.336 9.525 2.336L12 5.362z"/>
-    </svg>
-  );
-}
 
 function HelpIcon({ className }: { className?: string }) {
   return (

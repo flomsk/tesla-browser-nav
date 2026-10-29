@@ -1,14 +1,14 @@
 /**
- * GPX (GPS Exchange Format) utility functions for TeslaNav
+ * GPX (GPS Exchange Format) utility functions for track recording/playback
  * Handles generation, parsing, and manipulation of GPX data
  */
 
 import type { TrackPoint, GPXData, RecordingSession } from "@/types/gpx";
 
 const GPX_VERSION = "1.1";
-const GPX_CREATOR = "TeslaNav";
+const GPX_CREATOR = "Tesla Browser Nav";
 const GPX_NAMESPACE = "http://www.topografix.com/GPX/1/1";
-const TESLANAV_NAMESPACE = "http://teslanav.com/gpx/extensions";
+const TBN_NAMESPACE = "https://github.com/flomsk/tesla-browser-nav/gpx/extensions";
 
 /**
  * Generate a GPX XML string from track points
@@ -19,13 +19,13 @@ export function generateGPX(points: TrackPoint[], name: string): string {
   const trackPoints = points.map(point => {
     const extensions = [];
     if (point.heading !== undefined) {
-      extensions.push(`        <teslanav:heading>${point.heading.toFixed(1)}</teslanav:heading>`);
+      extensions.push(`        <tbn:heading>${point.heading.toFixed(1)}</tbn:heading>`);
     }
     if (point.speed !== undefined) {
-      extensions.push(`        <teslanav:speed>${point.speed.toFixed(2)}</teslanav:speed>`);
+      extensions.push(`        <tbn:speed>${point.speed.toFixed(2)}</tbn:speed>`);
     }
     if (point.accuracy !== undefined) {
-      extensions.push(`        <teslanav:accuracy>${point.accuracy.toFixed(1)}</teslanav:accuracy>`);
+      extensions.push(`        <tbn:accuracy>${point.accuracy.toFixed(1)}</tbn:accuracy>`);
     }
     
     const extensionsBlock = extensions.length > 0
@@ -44,7 +44,7 @@ export function generateGPX(points: TrackPoint[], name: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="${GPX_VERSION}" creator="${GPX_CREATOR}"
   xmlns="${GPX_NAMESPACE}"
-  xmlns:teslanav="${TESLANAV_NAMESPACE}">
+  xmlns:tbn="${TBN_NAMESPACE}">
   <metadata>
     <name>${escapeXml(name)}</name>
     <time>${now}</time>
@@ -91,7 +91,7 @@ export function parseGPX(gpxString: string): GPXData {
         const time = trkpt.querySelector("time")?.textContent || new Date().toISOString();
         const elevation = trkpt.querySelector("ele")?.textContent;
         
-        // Parse TeslaNav extensions
+        // Parse our track extensions
         const extensions = trkpt.querySelector("extensions");
         const heading = extensions?.querySelector("heading")?.textContent;
         const speed = extensions?.querySelector("speed")?.textContent;
@@ -171,7 +171,7 @@ export function generateRecordingName(): string {
  * Stored in localStorage and used to filter recordings
  */
 export function getOrCreateSessionToken(): string {
-  const STORAGE_KEY = "teslanav-session-token";
+  const STORAGE_KEY = "tbn-session-token";
   
   if (typeof window === "undefined") {
     return "server";

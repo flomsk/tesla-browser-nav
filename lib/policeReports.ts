@@ -122,8 +122,8 @@ export function toAlert(report: PoliceReport): WazeAlert {
     reliability: Math.min(10, 5 + report.up - report.down),
     nThumbsUp: report.up - 1,
     pubMillis: report.createdAt,
-    reportBy: "TeslaNav",
-    provider: "teslanav",
+    reportBy: "community",
+    provider: "community",
   };
 }
 

@@ -14,10 +14,13 @@ import {
 } from "@/lib/redis";
 
 // Simple admin auth - you can make this more secure
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "teslanav-admin-2024";
+// No default: without ADMIN_SECRET the admin API rejects every request
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 const INBOUND_API_KEY = process.env.INBOUND_API_KEY;
 const INBOUND_API_URL = "https://inbound.new/api/v2/emails";
-const ALERT_EMAIL = process.env.ALERT_EMAIL || "ryan@mandarin3d.com";
+const ALERT_EMAIL = process.env.ALERT_EMAIL;
+const EMAIL_FROM = process.env.EMAIL_FROM;
+const APP_URL = process.env.APP_URL || "";
 
 // Map ApiName to API_LIMITS keys
 const API_LIMIT_MAP: Record<ApiName, number> = {
@@ -47,7 +50,7 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const providedSecret = authHeader?.replace("Bearer ", "");
   
-  if (providedSecret !== ADMIN_SECRET) {
+  if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401 }
@@ -132,7 +135,7 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const providedSecret = authHeader?.replace("Bearer ", "");
   
-  if (providedSecret !== ADMIN_SECRET) {
+  if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401 }
@@ -196,7 +199,7 @@ export async function PUT(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const providedSecret = authHeader?.replace("Bearer ", "");
   
-  if (providedSecret !== ADMIN_SECRET) {
+  if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401 }
@@ -270,8 +273,8 @@ async function sendAlertEmail(
   limit: number,
   threshold: number
 ) {
-  if (!INBOUND_API_KEY) {
-    console.warn("INBOUND_API_KEY not configured, skipping email");
+  if (!INBOUND_API_KEY || !EMAIL_FROM || !ALERT_EMAIL) {
+    console.warn("INBOUND_API_KEY, EMAIL_FROM or ALERT_EMAIL not configured, skipping email");
     return;
   }
 
@@ -303,12 +306,12 @@ async function sendAlertEmail(
       </div>
 
       <p style="color: #6b7280; font-size: 14px;">
-        View your full usage dashboard at <a href="https://teslanav.com/admin" style="color: #3b82f6;">teslanav.com/admin</a>
+        View your full usage dashboard at <a href="${APP_URL}/admin" style="color: #3b82f6;">${APP_URL}/admin</a>
       </p>
       
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
       <p style="color: #9ca3af; font-size: 12px;">
-        Sent from TeslaNav API Usage Monitor
+        Sent from Tesla Browser Nav API Usage Monitor
       </p>
     </div>
   `;
@@ -321,7 +324,7 @@ ${usage.toLocaleString()} / ${limit.toLocaleString()} (${percentUsed}% used)
 
 Alert triggered: Usage has crossed the ${threshold}% threshold
 
-View your dashboard: https://teslanav.com/admin
+View your dashboard: ${APP_URL}/admin
   `.trim();
 
   try {
@@ -332,9 +335,9 @@ View your dashboard: https://teslanav.com/admin
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "TeslaNav Alerts <alerts@teslanav.com>",
+        from: EMAIL_FROM,
         to: [ALERT_EMAIL],
-        subject: `${statusEmoji} TeslaNav: ${apiName} at ${percentUsed}% usage`,
+        subject: `${statusEmoji} Tesla Browser Nav: ${apiName} at ${percentUsed}% usage`,
         html: htmlContent,
         text: textContent,
       }),

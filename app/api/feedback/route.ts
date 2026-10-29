@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const INBOUND_API_KEY = process.env.INBOUND_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM;
+const FEEDBACK_EMAIL = process.env.FEEDBACK_EMAIL;
 const INBOUND_API_URL = "https://inbound.new/api/v2/emails";
 
 // Simple in-memory rate limiting (in production, use Redis)
@@ -71,8 +73,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!INBOUND_API_KEY) {
-      console.error("INBOUND_API_KEY is not set");
+    if (!INBOUND_API_KEY || !EMAIL_FROM || !FEEDBACK_EMAIL) {
+      console.error("INBOUND_API_KEY, EMAIL_FROM and FEEDBACK_EMAIL must be set to send feedback");
       return NextResponse.json(
         { error: "Email service not configured" },
         { status: 500 }
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
     
     const htmlContent = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1a1a1a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">New TeslaNav Feedback</h2>
+        <h2 style="color: #1a1a1a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">New Tesla Browser Nav Feedback</h2>
         
         <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin: 16px 0;">
           <p style="margin: 0 0 8px 0; color: #64748b; font-size: 12px; text-transform: uppercase;">Feedback Message</p>
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
     `;
 
     const textContent = `
-New TeslaNav Feedback
+New Tesla Browser Nav Feedback
 =====================
 
 Feedback Message:
@@ -125,9 +127,9 @@ IP: ${ip}
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "TeslaNav Feedback <feedback@teslanav.com>",
-        to: ["ryan@mandarin3d.com"],
-        subject: `TeslaNav Feedback${email ? ` from ${email}` : ""}`,
+        from: EMAIL_FROM,
+        to: [FEEDBACK_EMAIL],
+        subject: `Tesla Browser Nav Feedback${email ? ` from ${email}` : ""}`,
         html: htmlContent,
         text: textContent,
       }),

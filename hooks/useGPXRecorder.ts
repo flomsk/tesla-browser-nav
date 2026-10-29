@@ -12,7 +12,7 @@ import {
 } from "@/lib/gpx";
 
 const RECORDING_INTERVAL_MS = 1000; // Record every 1 second
-const SESSIONS_STORAGE_KEY = "teslanav-recordings";
+const SESSIONS_STORAGE_KEY = "tbn-recordings";
 
 interface UseGPXRecorderOptions {
   /** Called when recording is saved successfully */
