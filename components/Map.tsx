@@ -8,10 +8,15 @@ import type { UnitSystem } from "@/lib/units";
 import type { WazeAlert, MapBounds } from "@/types/waze";
 import type { SpeedCamera } from "@/types/speedcamera";
 import type { RouteData } from "@/types/route";
+import type { ChargingStation, FuelStation, FuelType } from "@/types/poi";
+import { DEFAULT_FUEL_TYPE, FAST_CHARGER_KW, escapeHtml, fuelLabel } from "@/lib/places";
 
 import posthog from "posthog-js";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+// Per layer (fuel, chargers), closest to the map centre
+const MAX_PLACE_MARKERS = 120;
 
 interface MapProps {
   center?: [number, number]; // [lng, lat]
@@ -19,6 +24,9 @@ interface MapProps {
   isDarkMode?: boolean;
   alerts?: WazeAlert[];
   speedCameras?: SpeedCamera[];
+  fuelStations?: FuelStation[];
+  fuelType?: FuelType;
+  chargingStations?: ChargingStation[];
   units?: UnitSystem;
   onBoundsChange?: (bounds: MapBounds) => void;
   onCenteredChange?: (isCentered: boolean) => void;
@@ -239,6 +247,9 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     isDarkMode = false,
     alerts = [],
     speedCameras = [],
+    fuelStations = [],
+    fuelType = DEFAULT_FUEL_TYPE,
+    chargingStations = [],
     units = DEFAULT_UNIT_SYSTEM,
     onBoundsChange,
     onCenteredChange,
@@ -264,6 +275,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
   // Use Maps for incremental marker updates (key = unique ID)
   const markersRef = useRef<globalThis.Map<string, mapboxgl.Marker>>(new globalThis.Map());
   const cameraMarkersRef = useRef<globalThis.Map<string, mapboxgl.Marker>>(new globalThis.Map());
+  const placeMarkersRef = useRef<globalThis.Map<string, mapboxgl.Marker>>(new globalThis.Map());
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const userMarkerElRef = useRef<HTMLDivElement | null>(null);
   const pinMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -1853,13 +1865,13 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       // Build popup content
       let popupDetails = "";
       if (camera.name) {
-        popupDetails += `<div class="camera-popup-name" style="color: ${popupText}; font-size: 12px;">${camera.name}</div>`;
+        popupDetails += `<div class="camera-popup-name" style="color: ${popupText}; font-size: 12px;">${escapeHtml(camera.name)}</div>`;
       }
       if (camera.maxspeed) {
         popupDetails += `<div class="camera-popup-speed" style="color: ${popupText}; font-weight: 600; font-size: 14px;">Limit: ${formatSpeedLimit(camera.maxspeed, units)}</div>`;
       }
       if (camera.direction) {
-        popupDetails += `<div class="camera-popup-direction" style="color: ${popupSubtext}; font-size: 11px; text-transform: capitalize;">Direction: ${camera.direction}</div>`;
+        popupDetails += `<div class="camera-popup-direction" style="color: ${popupSubtext}; font-size: 11px; text-transform: capitalize;">Direction: ${escapeHtml(camera.direction)}</div>`;
       }
 
       const popupContent = `
@@ -1954,6 +1966,122 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       }
     }
   }, [speedCameras, mapLoaded, isDarkMode, units]);
+
+  // Fuel stations (price for the chosen fuel) and EV chargers (max power).
+  // Markers are rebuilt whenever the data, fuel type or theme changes.
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    const popupBg = isDarkMode ? "#1a1a1a" : "white";
+    const popupText = isDarkMode ? "#e5e5e5" : "#374151";
+    const popupSubtext = isDarkMode ? "#9ca3af" : "#6b7280";
+    const center = map.current.getCenter();
+    const byDistance = <T extends { lat: number; lon: number }>(a: T, b: T) =>
+      Math.hypot(a.lat - center.lat, a.lon - center.lng) - Math.hypot(b.lat - center.lat, b.lon - center.lng);
+
+    // Too many DOM markers make panning sluggish in the car browser: keep the closest ones
+    const fuel = fuelStations
+      .filter((s) => s.prices[fuelType] !== undefined)
+      .sort(byDistance)
+      .slice(0, MAX_PLACE_MARKERS);
+    // Superchargers and fast chargers first so slow city sockets don't crowd them out
+    const isPriority = (s: ChargingStation) => s.isTesla || (s.maxPowerKw ?? 0) >= FAST_CHARGER_KW;
+    const chargers = [...chargingStations]
+      .sort((a, b) => Number(isPriority(b)) - Number(isPriority(a)) || byDistance(a, b))
+      .slice(0, MAX_PLACE_MARKERS);
+
+    // Colour prices against the stations on screen: cheapest third green, dearest third red
+    const prices = fuel.map((s) => s.prices[fuelType]!).sort((a, b) => a - b);
+    const cheap = prices[Math.floor(prices.length / 3)] ?? 0;
+    const dear = prices[Math.floor((prices.length * 2) / 3)] ?? Infinity;
+
+    const items: { id: string; lat: number; lon: number; html: string; popup: string; zIndex: number }[] = [];
+
+    for (const station of fuel) {
+      const price = station.prices[fuelType]!;
+      const color = price <= cheap ? "#16a34a" : price >= dear ? "#dc2626" : "#d97706";
+      const priceRows = Object.entries(station.prices)
+        .map(([type, value]) => `<div style="display:flex;justify-content:space-between;gap:12px;${type === fuelType ? "font-weight:700;" : ""}"><span>${fuelLabel(type as FuelType)}</span><span>${value!.toFixed(3)} €</span></div>`)
+        .join("");
+      items.push({
+        id: `fuel-${station.id}-${fuelType}-${price}`,
+        lat: station.lat,
+        lon: station.lon,
+        html: `<div class="place-pill" style="background:${color};">⛽ ${price.toFixed(3)}</div>`,
+        zIndex: 0,
+        popup: `
+          <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
+            <div class="alert-popup-header" style="margin-bottom: 4px;">⛽ ${escapeHtml(station.brand)}</div>
+            <div style="color: ${popupSubtext}; font-size: 11px; margin-bottom: 6px;">${escapeHtml(station.address)}${station.town ? `, ${escapeHtml(station.town)}` : ""}</div>
+            <div style="font-size: 12px;">${priceRows}</div>
+            ${station.hours ? `<div style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">${escapeHtml(station.hours)}</div>` : ""}
+          </div>
+        `,
+      });
+    }
+
+    for (const station of chargers) {
+      const color = station.isTesla ? "#e31937" : (station.maxPowerKw ?? 0) >= FAST_CHARGER_KW ? "#2563eb" : "#0891b2";
+      const power = station.maxPowerKw ? `${Math.round(station.maxPowerKw)} kW` : "";
+      const connectorRows = station.connectors
+        .map((c) => `<div style="display:flex;justify-content:space-between;gap:12px;"><span>${c.quantity > 1 ? `${c.quantity}× ` : ""}${escapeHtml(c.type)}</span><span>${c.powerKw ? `${Math.round(c.powerKw)} kW` : ""}</span></div>`)
+        .join("");
+      items.push({
+        id: `charger-${station.id}-${station.maxPowerKw}`,
+        lat: station.lat,
+        lon: station.lon,
+        html: `<div class="place-pill" style="background:${color};${station.isOperational === false ? "opacity:0.45;" : ""}">${station.isTesla ? "T" : "⚡"}${power ? ` ${power}` : ""}</div>`,
+        // Superchargers on top, then fast chargers
+        zIndex: station.isTesla ? 2 : isPriority(station) ? 1 : 0,
+        popup: `
+          <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
+            <div class="alert-popup-header" style="margin-bottom: 4px;">⚡ ${escapeHtml(station.name)}</div>
+            ${station.operator ? `<div style="font-size: 12px; font-weight: 600;">${escapeHtml(station.operator)}</div>` : ""}
+            <div style="color: ${popupSubtext}; font-size: 11px; margin-bottom: 6px;">${escapeHtml(station.address)}</div>
+            <div style="font-size: 12px;">${connectorRows}</div>
+            ${station.isOperational === false ? `<div style="color: #dc2626; font-size: 11px; margin-top: 6px;">Reported not operational</div>` : ""}
+            ${station.usage ? `<div style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">${escapeHtml(station.usage)}</div>` : ""}
+            <div style="color: ${popupSubtext}; font-size: 10px; margin-top: 4px;">Source: Open Charge Map</div>
+          </div>
+        `,
+      });
+    }
+
+    const keep = new Set<string>();
+    for (const item of items) {
+      keep.add(item.id);
+      const existing = placeMarkersRef.current.get(item.id);
+      if (existing) {
+        existing.getPopup()?.setHTML(item.popup);
+        continue;
+      }
+
+      const el = document.createElement("div");
+      el.className = "place-marker";
+      el.innerHTML = item.html;
+      el.style.zIndex = String(item.zIndex);
+
+      const popup = new mapboxgl.Popup({
+        offset: 16,
+        closeButton: false,
+        maxWidth: "240px",
+        className: `alert-popup-container ${isDarkMode ? "dark" : ""}`,
+      }).setHTML(item.popup);
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([item.lon, item.lat])
+        .setPopup(popup)
+        .addTo(map.current!);
+      placeMarkersRef.current.set(item.id, marker);
+    }
+
+    for (const [id, marker] of placeMarkersRef.current) {
+      if (!keep.has(id)) {
+        marker.remove();
+        placeMarkersRef.current.delete(id);
+      }
+    }
+  }, [fuelStations, fuelType, chargingStations, mapLoaded, isDarkMode]);
 
   // Pin marker for long-press location (using Waze origin marker style)
   useEffect(() => {

@@ -10,6 +10,15 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { usePoliceReports } from "@/hooks/usePoliceReports";
 import { useSpeedCameras } from "@/hooks/useSpeedCameras";
 import { useCameraAlerts } from "@/hooks/useCameraAlerts";
+import { useMapPlaces } from "@/hooks/useMapPlaces";
+import {
+  DEFAULT_FUEL_TYPE,
+  FUEL_TYPE_STORAGE_KEY,
+  SHOW_CHARGERS_STORAGE_KEY,
+  SHOW_FUEL_STORAGE_KEY,
+  isFuelType,
+} from "@/lib/places";
+import type { ChargingStation, FuelStation, FuelType } from "@/types/poi";
 import { useTurnByTurn } from "@/hooks/useTurnByTurn";
 import { ManeuverBanner } from "@/components/ManeuverBanner";
 import { CameraWarningBanner } from "@/components/CameraWarningBanner";
@@ -91,6 +100,25 @@ export default function Home() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [showWazeAlerts, setShowWazeAlerts] = useState(true);
   const [showSpeedCameras, setShowSpeedCameras] = useState(true);
+  const [showChargers, setShowChargers] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(SHOW_CHARGERS_STORAGE_KEY) !== "false";
+    }
+    return true;
+  });
+  const [showFuel, setShowFuel] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(SHOW_FUEL_STORAGE_KEY) === "true";
+    }
+    return false;
+  });
+  const [fuelType, setFuelType] = useState<FuelType>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(FUEL_TYPE_STORAGE_KEY);
+      if (isFuelType(saved)) return saved;
+    }
+    return DEFAULT_FUEL_TYPE;
+  });
   const [showTraffic, setShowTraffic] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("tbn-traffic");
@@ -204,6 +232,29 @@ export default function Home() {
   const ownReportIdsRef = useRef<Set<string>>(new Set());
   const confirmPromptTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { cameras, allCameras } = useSpeedCameras({ bounds, enabled: showSpeedCameras });
+  const { places: chargingStations } = useMapPlaces<ChargingStation>({
+    endpoint: "/api/chargers",
+    bounds,
+    enabled: showChargers,
+  });
+  const { places: fuelStations } = useMapPlaces<FuelStation>({
+    endpoint: "/api/fuel",
+    bounds,
+    enabled: showFuel,
+  });
+
+  const handleToggleChargers = useCallback((value: boolean) => {
+    setShowChargers(value);
+    localStorage.setItem(SHOW_CHARGERS_STORAGE_KEY, value.toString());
+  }, []);
+  const handleToggleFuel = useCallback((value: boolean) => {
+    setShowFuel(value);
+    localStorage.setItem(SHOW_FUEL_STORAGE_KEY, value.toString());
+  }, []);
+  const handleFuelTypeChange = useCallback((value: FuelType) => {
+    setFuelType(value);
+    localStorage.setItem(FUEL_TYPE_STORAGE_KEY, value);
+  }, []);
 
   const cameraWarning = useCameraAlerts({
     cameras: allCameras,
@@ -1061,6 +1112,9 @@ export default function Home() {
         isDarkMode={effectiveDarkMode}
         alerts={filteredAlerts}
         speedCameras={showSpeedCameras ? cameras : []}
+        chargingStations={chargingStations}
+        fuelStations={fuelStations}
+        fuelType={fuelType}
         units={units}
         onBoundsChange={handleBoundsChange}
         onCenteredChange={handleCenteredChange}
@@ -1736,6 +1790,12 @@ export default function Home() {
         onToggleWazeAlerts={setShowWazeAlerts}
         showSpeedCameras={showSpeedCameras}
         onToggleSpeedCameras={setShowSpeedCameras}
+        showChargers={showChargers}
+        onToggleChargers={handleToggleChargers}
+        showFuel={showFuel}
+        onToggleFuel={handleToggleFuel}
+        fuelType={fuelType}
+        onFuelTypeChange={handleFuelTypeChange}
         showTraffic={showTraffic}
         onToggleTraffic={handleToggleTraffic}
         useSatellite={useSatellite}

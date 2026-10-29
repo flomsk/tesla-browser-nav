@@ -14,6 +14,8 @@ Built with Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4 and M
 - Camera warnings ahead of the car with a beep, voice and the camera's speed limit
 - Speedometer with the current speed limit (camera or road segment)
 - Community police reports: "Police here" button, confirmations and automatic expiry
+- EV chargers with max power, Tesla Superchargers highlighted (Open Charge Map)
+- Fuel stations with today's prices for Spain (Ministry Geoportal, no key needed)
 - Kilometers or miles
 - Map tile and camera data caching through a service worker
 
@@ -57,6 +59,7 @@ See [.env.example](./.env.example). Only `NEXT_PUBLIC_MAPBOX_TOKEN` is required.
 |---|---|
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Map, directions, voice instructions |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared storage for police reports. Without it reports live in process memory (fine for one Node process, not for serverless) |
+| `OPEN_CHARGE_MAP_KEY` | EV chargers layer ([free key](https://openchargemap.org/site/develop/api)) |
 | `LOCATION_IQ_TOKEN` | Address search and reverse geocoding |
 | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | Analytics (optional) |
 | `INBOUND_API_KEY`, `EMAIL_FROM`, `FEEDBACK_EMAIL` | Feedback form emails (optional) |
@@ -69,6 +72,8 @@ app/api/
   directions/      # Mapbox Directions: routes, steps, voice instructions, speed limits
   geocode/         # LocationIQ forward + reverse geocoding
   police/          # Community police reports and votes
+  fuel/            # Fuel stations + prices (Spanish Ministry Geoportal)
+  chargers/        # EV chargers (Open Charge Map)
   recording/       # GPX track storage
   feedback/        # Feedback emails
   admin/usage/     # API usage stats + threshold alerts

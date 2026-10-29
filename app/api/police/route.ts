@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { boundsSchema } from "@/lib/bounds";
 import { createReport, listReports, toAlert } from "@/lib/policeReports";
 
 // Simple in-memory rate limiting per IP for new reports
@@ -23,13 +24,6 @@ function checkRateLimit(ip: string): boolean {
   record.count++;
   return true;
 }
-
-const boundsSchema = z.object({
-  left: z.coerce.number().min(-180).max(180),
-  right: z.coerce.number().min(-180).max(180),
-  bottom: z.coerce.number().min(-90).max(90),
-  top: z.coerce.number().min(-90).max(90),
-});
 
 export async function GET(request: NextRequest) {
   const parsed = boundsSchema.safeParse(Object.fromEntries(request.nextUrl.searchParams));
