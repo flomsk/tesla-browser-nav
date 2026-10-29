@@ -136,13 +136,14 @@ export function computeProgress(
   };
 }
 
-// Where a point sits relative to a polyline: metres along it to the closest spot, and metres away
+// Where a point sits relative to a polyline: metres along it to the closest spot, metres away,
+// and the index of the closest segment
 export function placeOnPolyline(
   coords: [number, number][], lat: number, lng: number
-): { along: number; offset: number } {
+): { along: number; offset: number; segment: number } {
   if (coords.length < 2) {
     const [lng0, lat0] = coords[0] ?? [lng, lat];
-    return { along: 0, offset: haversine(lat, lng, lat0, lng0) };
+    return { along: 0, offset: haversine(lat, lng, lat0, lng0), segment: 0 };
   }
   const match = closestSegment(coords, lat, lng, 0, coords.length);
   let along = 0;
@@ -152,7 +153,7 @@ export function placeOnPolyline(
   const [aLng, aLat] = coords[match.index];
   const [bLng, bLat] = coords[match.index + 1];
   along += match.t * haversine(aLat, aLng, bLat, bLng);
-  return { along, offset: match.distance };
+  return { along, offset: match.distance, segment: match.index };
 }
 
 // The route still ahead of the driver, starting at their position: at most maxMeters long and
@@ -171,6 +172,21 @@ export function routeAhead(
   if (ahead.length <= maxPoints) return ahead;
   const stride = (ahead.length - 1) / (maxPoints - 1);
   return Array.from({ length: maxPoints }, (_, k) => ahead[Math.round(k * stride)]);
+}
+
+// Compass bearing (0 = north, clockwise) from a to b
+export function bearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+export function angleDifference(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
 }
 
 // Big arrow for the maneuver banner

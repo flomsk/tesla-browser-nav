@@ -14,6 +14,7 @@ Built with Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4 and M
 - Camera warnings ahead of the car with a beep, voice and the camera's speed limit
 - Speedometer with the current speed limit (camera or road segment)
 - Community police reports: "Police here" button, confirmations and automatic expiry
+- Live DGT incidents (accidents, closures, obstacles, slow traffic, roadworks): pins and a spoken warning for the ones on your route in your direction; without a route, hazards straight ahead. Spain except Catalonia and the Basque Country
 - One search box: addresses, or a category chip (Charging, Café, Food, Fuel, Parking); typing "supercharger" or "café" works too
 - While navigating, search looks along the route ahead and a pick becomes the new destination
 - Chargers with max power and Superchargers first (Open Charge Map), fuel with today's prices for Spain (Ministry Geoportal)
@@ -72,6 +73,7 @@ app/api/
   geocode/         # Address search + reverse geocoding (Mapbox Search Box)
   places/          # Category search near the car or along the route (Mapbox, Open Charge Map, fuel prices)
   police/          # Community police reports and votes
+  road-events/     # Live DGT incidents (DATEX II)
   recording/       # GPX track storage
   admin/usage/     # API usage stats + threshold alerts
 components/        # UI (map, maneuver banner, camera warning, speedometer, ...)

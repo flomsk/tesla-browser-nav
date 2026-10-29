@@ -1745,6 +1745,8 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       } else {
         // Single alert marker - minimal bubble
         const alert = cluster.alerts[0];
+        // DGT incidents: header is the incident ("Accidente"), no community votes/reliability
+        const isOfficial = alert.provider === "dgt";
         
         el.innerHTML = `
           <div class="alert-pin" style="
@@ -1765,11 +1767,12 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         const popupContent = `
           <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
             <div class="alert-popup-header" style="color: ${color}">
-              ${alert.type.replace(/_/g, " ")}
+              ${isOfficial && alert.subtype ? escapeHtml(alert.subtype) : alert.type.replace(/_/g, " ")}
             </div>
-            ${alert.street ? `<div class="alert-popup-street" style="color: ${popupText}">${alert.street}</div>` : ""}
-            ${alert.subtype ? `<div class="alert-popup-subtype" style="color: ${popupSubtext}">${alert.subtype.replace(/_/g, " ")}</div>` : ""}
-            ${alert.reportDescription ? `<div class="alert-popup-desc" style="color: ${popupSubtext}">${alert.reportDescription}</div>` : ""}
+            ${alert.street ? `<div class="alert-popup-street" style="color: ${popupText}">${escapeHtml(alert.street)}</div>` : ""}
+            ${alert.subtype && !isOfficial ? `<div class="alert-popup-subtype" style="color: ${popupSubtext}">${escapeHtml(alert.subtype.replace(/_/g, " "))}</div>` : ""}
+            ${alert.reportDescription ? `<div class="alert-popup-desc" style="color: ${popupSubtext}">${escapeHtml(alert.reportDescription)}</div>` : ""}
+            ${isOfficial ? `<div class="alert-popup-desc" style="color: ${popupSubtext}">Source: DGT</div>` : ""}
             <div class="alert-popup-meta" style="color: ${popupSubtext}">
               ${alert.nThumbsUp ? `<span style="display: inline-flex; align-items: center; gap: 3px;">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 12px; height: 12px;">
@@ -1777,7 +1780,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
                 </svg>
                 ${alert.nThumbsUp}
               </span>` : ""}
-              ${alert.reliability ? `<span style="display: inline-flex; align-items: center; gap: 3px;">
+              ${alert.reliability && !isOfficial ? `<span style="display: inline-flex; align-items: center; gap: 3px;">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 12px; height: 12px;">
                   <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clip-rule="evenodd" />
                 </svg>

@@ -9,6 +9,10 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { usePoliceReports } from "@/hooks/usePoliceReports";
 import { useSpeedCameras } from "@/hooks/useSpeedCameras";
 import { useCameraAlerts } from "@/hooks/useCameraAlerts";
+import { useRoadEvents } from "@/hooks/useRoadEvents";
+import { useRoadEventAlerts } from "@/hooks/useRoadEventAlerts";
+import { shownWithoutRoute, toMapAlert } from "@/lib/roadEventAlerts";
+import { RoadEventBanner } from "@/components/RoadEventBanner";
 import { DEFAULT_FUEL_TYPE, FUEL_TYPE_STORAGE_KEY, isFuelType } from "@/lib/places";
 import { routeAhead } from "@/lib/navigation";
 import type { FuelType, Place } from "@/types/poi";
@@ -240,6 +244,38 @@ export default function Home() {
     voiceEnabled,
     speechLang,
   });
+
+  // DGT incidents: warnings for the ones on the route ahead (or ahead in our heading when
+  // not navigating), pins on the map
+  const roadEvents = useRoadEvents(true);
+  const { warning: roadEventWarning, routeEvents } = useRoadEventAlerts({
+    events: roadEvents,
+    route: destination ? route : null,
+    progress: navProgress,
+    latitude,
+    longitude,
+    heading: effectiveHeading,
+    speed,
+    units,
+    language: navLanguage,
+    speechLang,
+    voiceEnabled,
+  });
+  const roadEventAlerts = useMemo(() => {
+    const labels = phrases(navLanguage).events;
+    if (destination) {
+      // Navigating: only what is still ahead on the route
+      const along = navProgress?.distanceAlong ?? 0;
+      return routeEvents.filter((r) => r.along >= along - 30).map((r) => toMapAlert(r.event, labels[r.event.kind]));
+    }
+    // Otherwise only clear-cut hazards in view, and not when zoomed out to a whole region
+    if (!bounds || (bounds.zoom !== undefined && bounds.zoom < 9)) return [];
+    return roadEvents
+      .filter((e) => shownWithoutRoute(e)
+        && e.start.lat >= bounds.south && e.start.lat <= bounds.north
+        && e.start.lon >= bounds.west && e.start.lon <= bounds.east)
+      .map((e) => toMapAlert(e, labels[e.kind]));
+  }, [destination, navProgress?.distanceAlong, routeEvents, roadEvents, bounds, navLanguage]);
 
   // While driving only the chosen route is drawn; alternatives are for the preview.
   // Memoised: the map redraws (and refits) its route layers whenever this array changes.
@@ -1018,18 +1054,22 @@ export default function Home() {
   }, []);
 
   // Filter alerts to show only key types (if enabled)
-  const filteredAlerts = showWazeAlerts
-    ? alerts.filter((alert) =>
-        ["POLICE", "ACCIDENT", "HAZARD", "ROAD_CLOSED"].includes(alert.type)
-      )
-    : [];
+  const filteredAlerts = useMemo(
+    () => (showWazeAlerts
+      ? alerts.filter((alert) => ["POLICE", "ACCIDENT", "HAZARD", "ROAD_CLOSED"].includes(alert.type))
+      : []),
+    [showWazeAlerts, alerts]
+  );
+
+  // Police reports plus DGT incidents, one set of pins on the map
+  const mapAlerts = useMemo(() => [...filteredAlerts, ...roadEventAlerts], [filteredAlerts, roadEventAlerts]);
 
   // Count by type for display
   const alertCounts = {
-    police: filteredAlerts.filter((a) => a.type === "POLICE").length,
-    accidents: filteredAlerts.filter((a) => a.type === "ACCIDENT").length,
-    hazards: filteredAlerts.filter((a) => a.type === "HAZARD").length,
-    closures: filteredAlerts.filter((a) => a.type === "ROAD_CLOSED").length,
+    police: mapAlerts.filter((a) => a.type === "POLICE").length,
+    accidents: mapAlerts.filter((a) => a.type === "ACCIDENT").length,
+    hazards: mapAlerts.filter((a) => a.type === "HAZARD").length,
+    closures: mapAlerts.filter((a) => a.type === "ROAD_CLOSED").length,
   };
 
   // Show refocus button when not centered (regardless of rotation mode)
@@ -1097,7 +1137,7 @@ export default function Home() {
         center={[longitude, latitude]}
         zoom={14}
         isDarkMode={effectiveDarkMode}
-        alerts={filteredAlerts}
+        alerts={mapAlerts}
         speedCameras={showSpeedCameras ? cameras : []}
         places={searchResults}
         onSelectPlace={handleSelectPlace}
@@ -1388,7 +1428,7 @@ export default function Home() {
         </button>
 
         {/* Alert Summary - Stacked vertically, same width as compass */}
-        {(filteredAlerts.length > 0 || alertsLoading) && (
+        {(alertCounts.police + alertCounts.accidents + alertCounts.hazards + alertCounts.closures > 0 || alertsLoading) && (
           <div
             className={`
               w-[72px] flex flex-col items-center gap-1.5 py-3 rounded-xl backdrop-blur-xl
@@ -1439,10 +1479,11 @@ export default function Home() {
         )}
       </div>
 
-      {/* Top Center - Speed camera warning */}
-      {cameraWarning && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <CameraWarningBanner warning={cameraWarning} units={units} />
+      {/* Top Center - Speed camera and road incident warnings */}
+      {(cameraWarning || roadEventWarning) && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3">
+          {cameraWarning && <CameraWarningBanner warning={cameraWarning} units={units} />}
+          {roadEventWarning && <RoadEventBanner warning={roadEventWarning} units={units} language={navLanguage} />}
         </div>
       )}
 

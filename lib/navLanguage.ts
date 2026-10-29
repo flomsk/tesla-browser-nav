@@ -36,6 +36,13 @@ const PHRASES = {
     police: "Police reported ahead",
     rerouting: "Rerouting",
     ready: "Voice guidance on",
+    eventAhead: (label: string, distance: string) => `${label} in ${distance}`,
+    events: {
+      accident: "Accident", closure: "Road closed", vehicleFire: "Vehicle on fire",
+      stoppedVehicle: "Stopped vehicle", obstacle: "Obstacle on the road", rockfall: "Rockfall",
+      flooding: "Flooding", badSurface: "Damaged road", lowVisibility: "Low visibility",
+      slowTraffic: "Slow traffic", laneClosed: "Lane closed", roadworks: "Roadworks",
+    },
   },
   es: {
     camera: (distance: string) => `Radar a ${distance}`,
@@ -45,6 +52,13 @@ const PHRASES = {
     police: "Policía avisada más adelante",
     rerouting: "Recalculando la ruta",
     ready: "Guía por voz activada",
+    eventAhead: (label: string, distance: string) => `${label} a ${distance}`,
+    events: {
+      accident: "Accidente", closure: "Carretera cortada", vehicleFire: "Vehículo en llamas",
+      stoppedVehicle: "Vehículo detenido", obstacle: "Obstáculo en la calzada", rockfall: "Desprendimientos",
+      flooding: "Inundación", badSurface: "Firme en mal estado", lowVisibility: "Visibilidad reducida",
+      slowTraffic: "Tráfico lento", laneClosed: "Carril cortado", roadworks: "Obras",
+    },
   },
   ru: {
     camera: (distance: string) => `Камера через ${distance}`,
@@ -54,6 +68,13 @@ const PHRASES = {
     police: "Впереди отмечена полиция",
     rerouting: "Перестраиваю маршрут",
     ready: "Голосовые подсказки включены",
+    eventAhead: (label: string, distance: string) => `${label} через ${distance}`,
+    events: {
+      accident: "Авария", closure: "Дорога перекрыта", vehicleFire: "Горит машина",
+      stoppedVehicle: "Стоящая машина", obstacle: "Препятствие на дороге", rockfall: "Камнепад",
+      flooding: "Подтопление", badSurface: "Плохое покрытие", lowVisibility: "Плохая видимость",
+      slowTraffic: "Затор", laneClosed: "Полоса перекрыта", roadworks: "Дорожные работы",
+    },
   },
 } satisfies Record<NavLanguage, unknown>;
 
