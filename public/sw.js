@@ -4,6 +4,11 @@
 const CACHE_NAME = 'teslanav-tiles-v1';
 const TILE_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
+// Static datasets (speed cameras) - network first, fall back to cache when offline
+const DATA_CACHE_NAME = 'teslanav-data-v1';
+const DATA_URLS = ['/data/cameras-es.json'];
+const ACTIVE_CACHES = [CACHE_NAME, DATA_CACHE_NAME];
+
 // Patterns for resources we want to cache
 const CACHEABLE_PATTERNS = [
   /api\.mapbox\.com\/v4\//,           // Vector tiles
@@ -16,6 +21,12 @@ const CACHEABLE_PATTERNS = [
 // Install event - set up cache
 self.addEventListener('install', (event) => {
   console.log('[SW] Service Worker installing for tile caching');
+  // Pre-cache datasets so they're available even if the first drive starts offline
+  event.waitUntil(
+    caches.open(DATA_CACHE_NAME)
+      .then((cache) => cache.addAll(DATA_URLS))
+      .catch((error) => console.warn('[SW] Dataset pre-cache failed:', error))
+  );
   self.skipWaiting();
 });
 
@@ -26,7 +37,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name.startsWith('teslanav-') && name !== CACHE_NAME)
+          .filter((name) => name.startsWith('teslanav-') && !ACTIVE_CACHES.includes(name))
           .map((name) => {
             console.log('[SW] Deleting old cache:', name);
             return caches.delete(name);
@@ -55,7 +66,29 @@ function isCacheValid(response) {
 // Fetch event - intercept and cache tile requests
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
-  
+
+  if (event.request.method === 'GET' && DATA_URLS.includes(new URL(url).pathname)) {
+    event.respondWith(
+      caches.open(DATA_CACHE_NAME).then(async (cache) => {
+        try {
+          const networkResponse = await fetch(event.request);
+          if (networkResponse.ok) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch (error) {
+          const cachedResponse = await cache.match(event.request);
+          if (cachedResponse) {
+            console.log('[SW] Offline, serving cached dataset:', url);
+            return cachedResponse;
+          }
+          throw error;
+        }
+      })
+    );
+    return;
+  }
+
   // Only handle GET requests for cacheable resources
   if (event.request.method !== 'GET' || !shouldCache(url)) {
     return;

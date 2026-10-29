@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDistance } from "@/lib/units";
+import type { UnitSystem } from "@/lib/units";
 import type { RouteData } from "@/types/route";
 
 interface RouteSelectorProps {
@@ -7,6 +9,7 @@ interface RouteSelectorProps {
   selectedIndex: number;
   onSelectRoute: (index: number) => void;
   isDarkMode?: boolean;
+  units: UnitSystem;
 }
 
 // Format duration in seconds to human-readable string
@@ -18,15 +21,6 @@ function formatDuration(seconds: number): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes} min`;
-}
-
-// Format distance in meters to miles
-function formatDistance(meters: number): string {
-  const miles = meters / 1609.34;
-  if (miles >= 10) {
-    return `${Math.round(miles)} mi`;
-  }
-  return `${miles.toFixed(1)} mi`;
 }
 
 // Get label for route (Fastest, Alternative, etc.)
@@ -57,6 +51,7 @@ export function RouteSelector({
   selectedIndex,
   onSelectRoute,
   isDarkMode = false,
+  units,
 }: RouteSelectorProps) {
   if (routes.length === 0) return null;
 
@@ -113,7 +108,7 @@ export function RouteSelector({
                   {formatDuration(route.duration)}
                 </span>
                 <span className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
-                  · {formatDistance(route.distance)}
+                  · {formatDistance(route.distance, units)}
                 </span>
                 {timeDiff > 0 && (
                   <span className={`text-xs font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-600"}`}>

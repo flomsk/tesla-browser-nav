@@ -1,7 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
-import Script from "next/script";
-import { PROJECT_SHUTDOWN_ENABLED } from "@/lib/shutdown";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -239,52 +237,27 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const bodyClassName = PROJECT_SHUTDOWN_ENABLED
-    ? `${geistSans.variable} antialiased bg-neutral-950 text-white`
-    : `${geistSans.variable} antialiased overflow-hidden`;
-
-  const bodyStyle = PROJECT_SHUTDOWN_ENABLED
-    ? {
-        margin: 0,
-        minHeight: "100vh",
-      }
-    : {
-        margin: 0,
-        padding: 0,
-        width: "100vw",
-        height: "100vh",
-        position: "fixed" as const,
-        inset: 0,
-      };
-
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {!PROJECT_SHUTDOWN_ENABLED && (
-          <>
-            {/* JSON-LD Structured Data */}
-            <script
-              type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-            />
-            {process.env.NODE_ENV === "development" && (
-              <Script
-                src="//unpkg.com/react-grab/dist/index.global.js"
-                crossOrigin="anonymous"
-                strategy="beforeInteractive"
-              />
-            )}
-            <Script
-              data-website-id="dfid_RO5g2rWwS6cGfyTS7wGGW"
-              data-domain="teslanav.com"
-              src="/js/script.js"
-              strategy="afterInteractive"
-            />
-          </>
-        )}
+        {/* JSON-LD Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
       </head>
-      <body className={bodyClassName} style={bodyStyle}>
-        {PROJECT_SHUTDOWN_ENABLED ? children : <Providers>{children}</Providers>}
+      <body
+        className={`${geistSans.variable} antialiased overflow-hidden`}
+        style={{
+          margin: 0,
+          padding: 0,
+          width: "100vw",
+          height: "100vh",
+          position: "fixed",
+          inset: 0,
+        }}
+      >
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

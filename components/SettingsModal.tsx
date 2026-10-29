@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react";
 import posthog from "posthog-js";
 import { ShieldExclamationIcon, MapIcon } from "@heroicons/react/24/solid";
+import { policeAlertDistanceOptions } from "@/lib/units";
+import { NAV_LANGUAGES } from "@/lib/navLanguage";
+import type { UnitSystem } from "@/lib/units";
+import type { NavLanguage } from "@/lib/navLanguage";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -28,6 +32,14 @@ interface SettingsModalProps {
   // 3D mode settings
   use3DMode: boolean;
   onToggle3DMode: (value: boolean) => void;
+  // Distance / speed units
+  units: UnitSystem;
+  onUnitsChange: (value: UnitSystem) => void;
+  // Turn-by-turn language + voice
+  navLanguage: NavLanguage;
+  onNavLanguageChange: (value: NavLanguage) => void;
+  voiceEnabled: boolean;
+  onToggleVoice: (value: boolean) => void;
 }
 
 export function SettingsModal({
@@ -52,6 +64,12 @@ export function SettingsModal({
   onTogglePoliceAlertSound,
   use3DMode,
   onToggle3DMode,
+  units,
+  onUnitsChange,
+  navLanguage,
+  onNavLanguageChange,
+  voiceEnabled,
+  onToggleVoice,
 }: SettingsModalProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
@@ -296,6 +314,82 @@ export function SettingsModal({
               </div>
             </div>
 
+            {/* Units Section */}
+            <div>
+              <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Units
+              </h3>
+              <div className={`
+                p-5 rounded-xl flex gap-2
+                ${isDarkMode ? "bg-white/5" : "bg-black/5"}
+              `}>
+                {([
+                  { value: "metric", label: "Kilometers · km/h" },
+                  { value: "imperial", label: "Miles · mph" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => onUnitsChange(option.value)}
+                    className={`
+                      flex-1 px-4 py-3 rounded-xl text-base font-medium transition-all
+                      ${units === option.value
+                        ? "bg-blue-500 text-white"
+                        : isDarkMode
+                          ? "bg-white/10 hover:bg-white/20 text-white"
+                          : "bg-black/10 hover:bg-black/20 text-black"
+                      }
+                    `}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice Guidance Section */}
+            <div>
+              <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Voice &amp; Directions
+              </h3>
+              <div className={`
+                p-5 rounded-xl flex flex-wrap gap-2
+                ${isDarkMode ? "bg-white/5" : "bg-black/5"}
+              `}>
+                {NAV_LANGUAGES.map((option) => (
+                  <button
+                    key={option.code}
+                    onClick={() => onNavLanguageChange(option.code)}
+                    className={`
+                      flex-1 px-4 py-3 rounded-xl text-base font-medium transition-all
+                      ${navLanguage === option.code
+                        ? "bg-blue-500 text-white"
+                        : isDarkMode
+                          ? "bg-white/10 hover:bg-white/20 text-white"
+                          : "bg-black/10 hover:bg-black/20 text-black"
+                      }
+                    `}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => onToggleVoice(!voiceEnabled)}
+                  aria-pressed={voiceEnabled}
+                  className={`
+                    flex-1 px-4 py-3 rounded-xl text-base font-medium transition-all
+                    ${voiceEnabled
+                      ? "bg-blue-500 text-white"
+                      : isDarkMode
+                        ? "bg-white/10 hover:bg-white/20 text-white"
+                        : "bg-black/10 hover:bg-black/20 text-black"
+                    }
+                  `}
+                >
+                  {voiceEnabled ? "🔊 Voice on" : "🔇 Voice off"}
+                </button>
+              </div>
+            </div>
+
             {/* Police Alerts Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -318,13 +412,7 @@ export function SettingsModal({
                     </div>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    {[
-                      { value: 0, label: "Off" },
-                      { value: 402, label: "¼ mi" },
-                      { value: 805, label: "½ mi" },
-                      { value: 1609, label: "1 mi" },
-                      { value: 3219, label: "2 mi" },
-                    ].map((option) => (
+                    {policeAlertDistanceOptions(units).map((option) => (
                       <button
                         key={option.value}
                         onClick={() => {

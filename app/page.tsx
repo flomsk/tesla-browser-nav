@@ -8,9 +8,30 @@ import { ChangelogModal } from "@/components/ChangelogModal";
 import { NavigateSearch } from "@/components/NavigateSearch";
 import { RouteSelector } from "@/components/RouteSelector";
 import { useGeolocation } from "@/hooks/useGeolocation";
-import { useWazeAlerts } from "@/hooks/useWazeAlerts";
+import { usePoliceReports } from "@/hooks/usePoliceReports";
 import { useSpeedCameras } from "@/hooks/useSpeedCameras";
-import { PROJECT_SHUTDOWN_ENABLED, PROJECT_SHUTDOWN_MESSAGE } from "@/lib/shutdown";
+import { useCameraAlerts } from "@/hooks/useCameraAlerts";
+import { useTurnByTurn } from "@/hooks/useTurnByTurn";
+import { ManeuverBanner } from "@/components/ManeuverBanner";
+import { CameraWarningBanner } from "@/components/CameraWarningBanner";
+import { SpeedDisplay } from "@/components/SpeedDisplay";
+import { StartTripScreen } from "@/components/StartTripScreen";
+import {
+  NAV_LANGUAGE_STORAGE_KEY,
+  defaultNavLanguage,
+  isNavLanguage,
+  phrases,
+  speechLangFor,
+} from "@/lib/navLanguage";
+import type { NavLanguage } from "@/lib/navLanguage";
+import { isSpeechSupported, speak, unlockAudio } from "@/lib/voice";
+import {
+  DEFAULT_UNIT_SYSTEM,
+  UNIT_SYSTEM_STORAGE_KEY,
+  closestPoliceAlertDistance,
+  formatDistance,
+} from "@/lib/units";
+import type { UnitSystem } from "@/lib/units";
 import type { MapBounds } from "@/types/waze";
 import type { RouteData, RoutesResponse } from "@/types/route";
 import Image from "next/image";
@@ -39,24 +60,11 @@ function formatDuration(seconds: number): string {
   return `${minutes} min`;
 }
 
-// Format distance in meters to human-readable string
-function formatDistance(meters: number): string {
-  const miles = meters / 1609.34;
-  if (miles >= 10) {
-    return `${Math.round(miles)} mi`;
-  }
-  return `${miles.toFixed(1)} mi`;
-}
+// Ask "still there?" when passing within this distance of a police report
+const CONFIRM_PROMPT_DISTANCE_M = 150;
+const CONFIRM_PROMPT_TIMEOUT_MS = 12000;
 
 export default function Home() {
-  if (PROJECT_SHUTDOWN_ENABLED) {
-    return <ShutdownHome />;
-  }
-
-  return <LiveHome />;
-}
-
-function LiveHome() {
   // Use lazy initialization to read from localStorage immediately
   // This ensures the map initializes with the correct theme before first render
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -130,13 +138,39 @@ function LiveHome() {
   const [isMobile, setIsMobile] = useState(false);
   const [dismissedMobileWarning, setDismissedMobileWarning] = useState(false);
   
+  const [units, setUnits] = useState<UnitSystem>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(UNIT_SYSTEM_STORAGE_KEY);
+      if (saved === "metric" || saved === "imperial") return saved;
+    }
+    return DEFAULT_UNIT_SYSTEM;
+  });
+
+  // Language for route instructions and voice
+  const [navLanguage, setNavLanguage] = useState<NavLanguage>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(NAV_LANGUAGE_STORAGE_KEY);
+      if (isNavLanguage(saved)) return saved;
+    }
+    return defaultNavLanguage();
+  });
+  const speechLang = speechLangFor(navLanguage);
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("teslanav-voice") !== "false";
+    }
+    return true;
+  });
+  // Browsers only allow sound after a tap, so every session starts with the "Start driving" screen
+  const [tripStarted, setTripStarted] = useState(false);
+
   // Police alert settings - use lazy init to read from localStorage immediately
   const [policeAlertDistance, setPoliceAlertDistance] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("teslanav-police-distance");
-      return saved !== null ? parseInt(saved, 10) : 805;
+      return saved !== null ? parseInt(saved, 10) : 500;
     }
-    return 805; // meters (~0.5 miles), 0 = off
+    return 500; // meters, 0 = off
   });
   const [policeAlertSound, setPoliceAlertSound] = useState(() => {
     if (typeof window !== "undefined") {
@@ -170,8 +204,57 @@ function LiveHome() {
   const effectiveHeading = isSimulating && simulatedPosition ? simulatedPosition.heading : realEffectiveHeading;
   // Simulated speed: ~25 m/s highway driving for testing, otherwise use real speed
   const speed = isSimulating ? 25 : realSpeed;
-  const { alerts, loading: alertsLoading, cachedTileBounds } = useWazeAlerts({ bounds });
-  const { cameras } = useSpeedCameras({ bounds, enabled: showSpeedCameras });
+  const { alerts, loading: alertsLoading, reportPolice, voteOnReport } = usePoliceReports({ bounds });
+
+  // Police reporting + "still there?" confirmations
+  const [reportStatus, setReportStatus] = useState<string | null>(null);
+  const [confirmPrompt, setConfirmPrompt] = useState<{ id: string } | null>(null);
+  const promptedPoliceIdsRef = useRef<Set<string>>(new Set());
+  const ownReportIdsRef = useRef<Set<string>>(new Set());
+  const confirmPromptTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const { cameras, allCameras } = useSpeedCameras({ bounds, enabled: showSpeedCameras });
+
+  const cameraWarning = useCameraAlerts({
+    cameras: allCameras,
+    latitude,
+    longitude,
+    heading: effectiveHeading,
+    speed,
+    enabled: showSpeedCameras,
+    units,
+    language: navLanguage,
+    speechLang,
+    voiceEnabled,
+  });
+
+  const navProgress = useTurnByTurn({
+    route,
+    active: destination !== null,
+    latitude,
+    longitude,
+    voiceEnabled,
+    speechLang,
+  });
+
+  // Speedometer limit: an upcoming camera's limit wins, otherwise the route's limit for this segment
+  const currentSpeedLimitKmh = cameraWarning?.limitKmh ?? navProgress?.speedLimitKmh ?? null;
+
+  const handleStartTrip = useCallback(() => {
+    unlockAudio([alertAudioRef.current]);
+    if (voiceEnabled) speak(phrases(navLanguage).ready, speechLang);
+    setTripStarted(true);
+  }, [voiceEnabled, navLanguage, speechLang]);
+
+  const handleNavLanguageChange = useCallback((value: NavLanguage) => {
+    setNavLanguage(value);
+    localStorage.setItem(NAV_LANGUAGE_STORAGE_KEY, value);
+  }, []);
+
+  const handleToggleVoice = useCallback((value: boolean) => {
+    setVoiceEnabled(value);
+    localStorage.setItem("teslanav-voice", value.toString());
+    if (!value && isSpeechSupported()) window.speechSynthesis.cancel();
+  }, []);
 
   // Track last route origin to detect significant movement
   const lastRouteOriginRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -264,7 +347,7 @@ function LiveHome() {
     
     try {
       const response = await fetch(
-        `/api/directions?originLng=${longitude}&originLat=${latitude}&destLng=${destLng}&destLat=${destLat}`
+        `/api/directions?originLng=${longitude}&originLat=${latitude}&destLng=${destLng}&destLat=${destLat}&language=${navLanguage}&units=${units}`
       );
       
       if (response.ok) {
@@ -304,7 +387,7 @@ function LiveHome() {
         setRouteLoading(false);
       }
     }
-  }, [latitude, longitude]);
+  }, [latitude, longitude, navLanguage, units]);
 
   // Recalculate route when user deviates from the planned route (off-route detection)
   useEffect(() => {
@@ -397,6 +480,7 @@ function LiveHome() {
 
   // Clear destination
   const handleClearDestination = useCallback(() => {
+    if (isSpeechSupported()) window.speechSynthesis.cancel();
     setDestination(null);
     setRoutes([]);
     setSelectedRouteIndex(0);
@@ -549,6 +633,15 @@ function LiveHome() {
     // Clear alerted IDs when changing distance so alerts can re-trigger
     alertedPoliceIdsRef.current.clear();
   }, []);
+
+  // Switching units also snaps the police alert distance to the nearest preset of the new system
+  const handleUnitsChange = useCallback((value: UnitSystem) => {
+    setUnits(value);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(UNIT_SYSTEM_STORAGE_KEY, value);
+    }
+    handlePoliceAlertDistanceChange(closestPoliceAlertDistance(policeAlertDistance, value));
+  }, [policeAlertDistance, handlePoliceAlertDistanceChange]);
 
   // Save police alert sound preference to localStorage
   const handleTogglePoliceAlertSound = useCallback((value: boolean) => {
@@ -772,6 +865,60 @@ function LiveHome() {
     }
   }, [latitude, longitude, alerts, policeAlertDistance, policeAlertSound, showWazeAlerts, getDistanceInMeters, effectiveHeading, isAlertAhead]);
 
+  // When passing close to a police report, ask whether it's still there
+  useEffect(() => {
+    if (!latitude || !longitude || !showWazeAlerts || confirmPrompt) return;
+
+    const nearby = alerts.find(
+      (alert) =>
+        alert.type === "POLICE" &&
+        !promptedPoliceIdsRef.current.has(alert.uuid) &&
+        !ownReportIdsRef.current.has(alert.uuid) &&
+        getDistanceInMeters(latitude, longitude, alert.location.y, alert.location.x) <= CONFIRM_PROMPT_DISTANCE_M
+    );
+    if (!nearby) return;
+
+    promptedPoliceIdsRef.current.add(nearby.uuid);
+    setConfirmPrompt({ id: nearby.uuid });
+    confirmPromptTimerRef.current = setTimeout(() => setConfirmPrompt(null), CONFIRM_PROMPT_TIMEOUT_MS);
+  }, [latitude, longitude, alerts, showWazeAlerts, confirmPrompt, getDistanceInMeters]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmPromptTimerRef.current) clearTimeout(confirmPromptTimerRef.current);
+    };
+  }, []);
+
+  const flashReportStatus = useCallback((message: string) => {
+    setReportStatus(message);
+    setTimeout(() => setReportStatus(null), 3000);
+  }, []);
+
+  const handleReportPolice = useCallback(async () => {
+    if (!latitude || !longitude) {
+      flashReportStatus("No GPS position yet");
+      return;
+    }
+    const id = await reportPolice(latitude, longitude);
+    if (id) {
+      ownReportIdsRef.current.add(id);
+      // Don't alert ourselves about our own report
+      alertedPoliceIdsRef.current.add(id);
+      flashReportStatus("Police reported");
+      posthog.capture("police_reported");
+    } else {
+      flashReportStatus("Report failed — offline?");
+    }
+  }, [latitude, longitude, reportPolice, flashReportStatus]);
+
+  const handleConfirmVote = useCallback(async (vote: "up" | "down") => {
+    if (!confirmPrompt) return;
+    if (confirmPromptTimerRef.current) clearTimeout(confirmPromptTimerRef.current);
+    setConfirmPrompt(null);
+    const ok = await voteOnReport(confirmPrompt.id, vote);
+    flashReportStatus(ok ? "Thanks!" : "Vote failed — offline?");
+  }, [confirmPrompt, voteOnReport, flashReportStatus]);
+
   // Listen for system dark mode preference changes
   // Only update if user hasn't explicitly set a preference
   useEffect(() => {
@@ -896,6 +1043,16 @@ function LiveHome() {
   if (!latitude || !longitude) {
     return (
       <main className="relative w-full h-full bg-[#0a0a0a] flex items-center justify-center">
+        {/* Let the driver tap "Start" while GPS is still acquiring */}
+        {!tripStarted && (
+          <StartTripScreen
+            language={navLanguage}
+            onLanguageChange={handleNavLanguageChange}
+            voiceEnabled={voiceEnabled}
+            onToggleVoice={handleToggleVoice}
+            onStart={handleStartTrip}
+          />
+        )}
         <div className="flex flex-col items-center gap-6">
           {/* TeslaNav Logo/Title */}
           <div className="flex items-center gap-3">
@@ -937,6 +1094,7 @@ function LiveHome() {
         isDarkMode={effectiveDarkMode}
         alerts={filteredAlerts}
         speedCameras={showSpeedCameras ? cameras : []}
+        units={units}
         onBoundsChange={handleBoundsChange}
         onCenteredChange={handleCenteredChange}
         onLongPress={handleMapLongPress}
@@ -950,7 +1108,6 @@ function LiveHome() {
         showAvatarPulse={showAvatarPulse}
         showAlertRadius={isDevMode && policeAlertDistance > 0}
         alertRadiusMeters={policeAlertDistance}
-        debugTileBounds={isDevMode ? cachedTileBounds : undefined}
         use3DMode={use3DMode}
       />
 
@@ -1035,44 +1192,20 @@ function LiveHome() {
         );
       })()}
 
-      {/* Top Left - Support Banner */}
-      {showSupportBanner && (
-        <div className="absolute top-4 left-4 z-30">
-          <button
-            onClick={() => {
-              setShowSettings(true);
-              posthog.capture("support_banner_clicked");
-            }}
-            className={`
-              flex items-center gap-2 px-4 py-2.5 rounded-xl backdrop-blur-xl
-              ${getButtonStyles(effectiveDarkMode)}
-              shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
-              group
-            `}
-          >
-            <span className="text-lg">❤️</span>
-            <span className="text-sm font-medium">Support this project</span>
-            <svg 
-              className={`w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity`} 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor" 
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      )}
+      {/* Top Left - Turn-by-turn banner while navigating, otherwise search */}
+      <div className="absolute top-4 left-4 z-30 flex flex-col gap-3">
+        {navProgress && (
+          <ManeuverBanner progress={navProgress} units={units} isDarkMode={effectiveDarkMode} />
+        )}
 
-      {/* Navigate Search + Destination Card (hidden - navigation in development) */}
-      <div className="absolute top-16 left-4 z-30 flex flex-col gap-3 hidden">
-        <NavigateSearch
-          isDarkMode={effectiveDarkMode}
-          onSelectDestination={handleSelectDestination}
-          onOpenChange={setIsSearchOpen}
-          userLocation={latitude && longitude ? { latitude, longitude } : null}
-        />
+        {!destination && (
+          <NavigateSearch
+            isDarkMode={effectiveDarkMode}
+            onSelectDestination={handleSelectDestination}
+            onOpenChange={setIsSearchOpen}
+            userLocation={latitude && longitude ? { latitude, longitude } : null}
+          />
+        )}
 
         {/* Preview Card - Shows when a location is searched but not navigating yet */}
         {previewLocation && !destination && !isSearchOpen && (
@@ -1102,6 +1235,7 @@ function LiveHome() {
                   selectedIndex={selectedRouteIndex}
                   onSelectRoute={setSelectedRouteIndex}
                   isDarkMode={effectiveDarkMode}
+                  units={units}
                 />
               </div>
             )}
@@ -1164,7 +1298,7 @@ function LiveHome() {
                   </span>
                 </div>
                 <div className={`text-sm ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  {formatDistance(route.distance)}
+                  {formatDistance(route.distance, units)}
                 </div>
               </div>
             )}
@@ -1288,6 +1422,23 @@ function LiveHome() {
         )}
       </div>
 
+      {/* Top Center - Speed camera warning */}
+      {cameraWarning && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
+          <CameraWarningBanner warning={cameraWarning} units={units} />
+        </div>
+      )}
+
+      {/* Speedometer - above the bottom-left controls, closest to the driver */}
+      <div className="absolute bottom-28 left-4 z-30">
+        <SpeedDisplay
+          speedMetersPerSecond={speed}
+          speedLimitKmh={currentSpeedLimitKmh}
+          units={units}
+          isDarkMode={effectiveDarkMode}
+        />
+      </div>
+
       {/* Bottom Left - User Location + Settings */}
       <div className="absolute bottom-6 left-4 z-30 flex items-center gap-3">
         {latitude && longitude && (
@@ -1368,7 +1519,83 @@ function LiveHome() {
         >
           <span className="text-3xl leading-none">🛰️</span>
         </button>
+
+        {/* Report Police Button */}
+        <button
+          onClick={handleReportPolice}
+          className="px-5 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center gap-2 bg-blue-600/85 text-white border-blue-400/30 shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95"
+          aria-label="Report police here"
+        >
+          <PoliceAlertIcon className="w-7 h-7" />
+          <span className="text-base font-bold">Police</span>
+        </button>
+
+        {/* Voice mute toggle */}
+        <button
+          onClick={() => handleToggleVoice(!voiceEnabled)}
+          className={`
+            w-16 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center
+            ${getButtonStyles(effectiveDarkMode)}
+            shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
+          `}
+          aria-label={voiceEnabled ? "Mute voice guidance" : "Unmute voice guidance"}
+          aria-pressed={voiceEnabled}
+        >
+          <span className="text-3xl leading-none">{voiceEnabled ? "🔊" : "🔇"}</span>
+        </button>
       </div>
+
+      {/* Start screen - unlocks audio with the first tap */}
+      {!tripStarted && (
+        <StartTripScreen
+          language={navLanguage}
+          onLanguageChange={handleNavLanguageChange}
+          voiceEnabled={voiceEnabled}
+          onToggleVoice={handleToggleVoice}
+          onStart={handleStartTrip}
+        />
+      )}
+
+      {/* Police "still there?" prompt */}
+      {confirmPrompt && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40">
+          <div
+            className={`
+              flex items-center gap-4 pl-5 pr-3 py-3 rounded-2xl backdrop-blur-xl shadow-2xl border
+              ${getContainerStyles(effectiveDarkMode)}
+            `}
+          >
+            <PoliceAlertIcon className="w-8 h-8 text-blue-500" />
+            <span className="text-lg font-semibold">Police still there?</span>
+            <button
+              onClick={() => handleConfirmVote("up")}
+              className="h-14 px-6 rounded-xl bg-blue-600 text-white text-lg font-bold active:scale-95 transition-transform"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => handleConfirmVote("down")}
+              className="h-14 px-6 rounded-xl bg-gray-500/80 text-white text-lg font-bold active:scale-95 transition-transform"
+            >
+              Not there
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Report / vote feedback */}
+      {reportStatus && !confirmPrompt && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40">
+          <div
+            className={`
+              px-5 py-3 rounded-xl backdrop-blur-xl shadow-lg border text-base font-semibold
+              ${getContainerStyles(effectiveDarkMode)}
+            `}
+          >
+            {reportStatus}
+          </div>
+        </div>
+      )}
 
       {/* Bottom Right - Control Buttons */}
       <div className="absolute bottom-6 right-4 z-30 flex gap-3">
@@ -1556,6 +1783,12 @@ function LiveHome() {
         onTogglePoliceAlertSound={handleTogglePoliceAlertSound}
         use3DMode={use3DMode}
         onToggle3DMode={handleToggle3DMode}
+        units={units}
+        onUnitsChange={handleUnitsChange}
+        navLanguage={navLanguage}
+        onNavLanguageChange={handleNavLanguageChange}
+        voiceEnabled={voiceEnabled}
+        onToggleVoice={handleToggleVoice}
       />
 
       {/* Feedback Modal */}
@@ -1711,36 +1944,6 @@ function LiveHome() {
           </div>
         </div>
       )}
-    </main>
-  );
-}
-
-function ShutdownHome() {
-  return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-neutral-950 px-6 py-12 text-white">
-      <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-400">
-          TeslaNav Shutdown Notice
-        </p>
-        <h1 className="mt-3 text-3xl font-bold sm:text-4xl">TeslaNav has been shutdown</h1>
-        <p className="mt-6 text-base leading-7 text-neutral-200">{PROJECT_SHUTDOWN_MESSAGE}</p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <a
-            href="https://github.com/R44VC0RP/teslanav.com"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20"
-          >
-            View on GitHub
-          </a>
-          <a
-            href="mailto:ryan@teslanav.com"
-            className="rounded-lg border border-blue-400/40 bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-100 transition-colors hover:bg-blue-500/30"
-          >
-            Email Ryan
-          </a>
-        </div>
-      </div>
     </main>
   );
 }

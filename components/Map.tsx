@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { DEFAULT_UNIT_SYSTEM, formatSpeedLimit } from "@/lib/units";
+import type { UnitSystem } from "@/lib/units";
 import type { WazeAlert, MapBounds } from "@/types/waze";
 import type { SpeedCamera } from "@/types/speedcamera";
 import type { RouteData } from "@/types/route";
@@ -17,6 +19,7 @@ interface MapProps {
   isDarkMode?: boolean;
   alerts?: WazeAlert[];
   speedCameras?: SpeedCamera[];
+  units?: UnitSystem;
   onBoundsChange?: (bounds: MapBounds) => void;
   onCenteredChange?: (isCentered: boolean) => void;
   onLongPress?: (lng: number, lat: number, screenX: number, screenY: number) => void;
@@ -75,6 +78,12 @@ const CAMERA_ICONS: Record<string, string> = {
   speed_camera: "/icons/speed-camera.svg",
   red_light_camera: "/icons/red-light-camera.svg",
   average_speed_camera: "/icons/speed-camera.svg", // Use same icon as speed camera
+};
+
+const CAMERA_SOURCE_LABELS: Record<string, string> = {
+  dgt: "DGT",
+  sct: "Servei Català de Trànsit",
+  osm: "OpenStreetMap",
 };
 
 // Severity order for clustering (higher = more severe)
@@ -230,6 +239,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     isDarkMode = false,
     alerts = [],
     speedCameras = [],
+    units = DEFAULT_UNIT_SYSTEM,
     onBoundsChange,
     onCenteredChange,
     onLongPress,
@@ -583,20 +593,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       pitchWithRotate: use3DMode, // Allow pitch control in 3D mode
       dragRotate: false, // Start with north up
       pitch: use3DMode ? 60 : 0, // Set initial pitch for 3D mode
-      // Route tile requests through our caching proxy to reduce Mapbox costs
-      transformRequest: (url, resourceType) => {
-        // Only proxy tile requests, not style/sprite/glyph JSON files
-        if (
-          resourceType === "Tile" &&
-          (url.includes("api.mapbox.com") || url.includes("tiles.mapbox.com"))
-        ) {
-          // Must use absolute URL for Mapbox GL
-          const proxyUrl = `${window.location.origin}/api/tiles?url=${encodeURIComponent(url)}`;
-          return { url: proxyUrl };
-        }
-        // Let other requests pass through normally
-        return { url };
-      },
+      // Tiles are fetched directly from Mapbox so the service worker can cache them for offline use
     });
 
     map.current.on("load", () => {
@@ -1851,25 +1848,52 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       const cameraId = camera.id || `camera-${camera.location.lat.toFixed(6)}-${camera.location.lon.toFixed(6)}`;
       newCameraIds.add(cameraId);
       
+      const cameraTypeLabel = camera.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+      // Build popup content
+      let popupDetails = "";
+      if (camera.name) {
+        popupDetails += `<div class="camera-popup-name" style="color: ${popupText}; font-size: 12px;">${camera.name}</div>`;
+      }
+      if (camera.maxspeed) {
+        popupDetails += `<div class="camera-popup-speed" style="color: ${popupText}; font-weight: 600; font-size: 14px;">Limit: ${formatSpeedLimit(camera.maxspeed, units)}</div>`;
+      }
+      if (camera.direction) {
+        popupDetails += `<div class="camera-popup-direction" style="color: ${popupSubtext}; font-size: 11px; text-transform: capitalize;">Direction: ${camera.direction}</div>`;
+      }
+
+      const popupContent = `
+        <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
+          <div class="alert-popup-header" style="color: #ef4444; margin-bottom: 4px;">
+            📷 ${cameraTypeLabel}
+          </div>
+          ${popupDetails}
+          <div class="camera-popup-source" style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">
+            Source: ${CAMERA_SOURCE_LABELS[camera.source] ?? camera.source}
+          </div>
+        </div>
+      `;
+
       // Check if marker already exists
       const existingMarker = cameraMarkersRef.current.get(cameraId);
-      
+
       if (existingMarker) {
         // Update position if needed
         const currentLngLat = existingMarker.getLngLat();
-        if (Math.abs(currentLngLat.lng - camera.location.lon) > 0.00001 || 
+        if (Math.abs(currentLngLat.lng - camera.location.lon) > 0.00001 ||
             Math.abs(currentLngLat.lat - camera.location.lat) > 0.00001) {
           existingMarker.setLngLat([camera.location.lon, camera.location.lat]);
         }
+        // Refresh popup text (e.g. after switching units)
+        existingMarker.getPopup()?.setHTML(popupContent);
         return; // Keep existing marker, don't recreate
       }
-      
+
       // Create new marker
       const el = document.createElement("div");
       el.className = "camera-marker";
 
       const icon = CAMERA_ICONS[camera.type] || CAMERA_ICONS.speed_camera;
-      const cameraTypeLabel = camera.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
       el.innerHTML = `
         <div class="camera-pin" style="
@@ -1883,27 +1907,6 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
             justify-content: center;
           ">
             <img src="${icon}" alt="${cameraTypeLabel}" style="width: 36px; height: auto;${!isDarkMode ? ' filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));' : ''}" />
-          </div>
-        </div>
-      `;
-
-      // Build popup content
-      let popupDetails = "";
-      if (camera.maxspeed) {
-        popupDetails += `<div class="camera-popup-speed" style="color: ${popupText}; font-weight: 600; font-size: 14px;">Limit: ${camera.maxspeed} mph</div>`;
-      }
-      if (camera.direction) {
-        popupDetails += `<div class="camera-popup-direction" style="color: ${popupSubtext}; font-size: 11px; text-transform: capitalize;">Direction: ${camera.direction}</div>`;
-      }
-
-      const popupContent = `
-        <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
-          <div class="alert-popup-header" style="color: #ef4444; margin-bottom: 4px;">
-            📷 ${cameraTypeLabel}
-          </div>
-          ${popupDetails}
-          <div class="camera-popup-source" style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">
-            Source: OpenStreetMap
           </div>
         </div>
       `;
@@ -1950,7 +1953,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         cameraMarkersRef.current.delete(id);
       }
     }
-  }, [speedCameras, mapLoaded, isDarkMode]);
+  }, [speedCameras, mapLoaded, isDarkMode, units]);
 
   // Pin marker for long-press location (using Waze origin marker style)
   useEffect(() => {

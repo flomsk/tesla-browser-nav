@@ -124,6 +124,7 @@ export default function ViewPage() {
     distance: 0,
     duration: 0,
     steps: [],
+    maxspeeds: [],
     summary: "Recorded track",
   } : null;
 

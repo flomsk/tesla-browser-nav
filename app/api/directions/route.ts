@@ -1,35 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trackApiUsage } from "@/lib/redis";
+import { NAV_LANGUAGES } from "@/lib/navLanguage";
+import type { RouteData, RoutesResponse } from "@/types/route";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
-export interface RouteStep {
-  instruction: string;
-  distance: number;
-  duration: number;
-  name: string;
-  maneuver: {
-    type: string;
-    modifier?: string;
-    bearing_after?: number;
-  };
-}
+type MapboxMaxspeed = { speed?: number; unit?: "km/h" | "mph"; unknown?: boolean; none?: boolean };
 
-export interface RouteData {
-  id: string;
-  geometry: {
-    coordinates: [number, number][];
-    type: string;
-  };
-  distance: number; // meters
-  duration: number; // seconds
-  steps: RouteStep[];
-  summary: string; // e.g., "via I-95 N"
-}
-
-export interface RoutesResponse {
-  routes: RouteData[];
-  selectedIndex: number;
+// Convert Mapbox maxspeed annotations to km/h (null = unknown / no limit)
+function toKmh(maxspeed: MapboxMaxspeed): number | null {
+  if (maxspeed.speed === undefined) return null;
+  return maxspeed.unit === "mph" ? Math.round(maxspeed.speed * 1.609344) : maxspeed.speed;
 }
 
 export async function GET(request: NextRequest) {
@@ -38,6 +19,9 @@ export async function GET(request: NextRequest) {
   const originLat = searchParams.get("originLat");
   const destLng = searchParams.get("destLng");
   const destLat = searchParams.get("destLat");
+  const languageParam = searchParams.get("language");
+  const language = NAV_LANGUAGES.some((l) => l.code === languageParam) ? languageParam! : "en";
+  const units = searchParams.get("units") === "imperial" ? "imperial" : "metric";
 
   if (!originLng || !originLat || !destLng || !destLat) {
     return NextResponse.json(
@@ -63,8 +47,12 @@ export async function GET(request: NextRequest) {
       geometries: "geojson",
       overview: "full",
       steps: "true",
-      annotations: "congestion,duration,distance",
+      annotations: "congestion,duration,distance,maxspeed",
       alternatives: "true", // Enable alternative routes!
+      // Localized instructions + spoken announcements for turn-by-turn guidance
+      language,
+      voice_instructions: "true",
+      voice_units: units,
     });
 
     const response = await fetch(
@@ -94,13 +82,16 @@ export async function GET(request: NextRequest) {
       duration: number;
       legs: Array<{
         summary: string;
+        annotation?: { maxspeed?: MapboxMaxspeed[] };
         steps: Array<{
           maneuver: {
             instruction: string;
             type: string;
             modifier?: string;
             bearing_after?: number;
+            location: [number, number];
           };
+          voiceInstructions?: Array<{ distanceAlongGeometry: number; announcement: string }>;
           distance: number;
           duration: number;
           name: string;
@@ -125,8 +116,14 @@ export async function GET(request: NextRequest) {
             type: step.maneuver.type,
             modifier: step.maneuver.modifier,
             bearing_after: step.maneuver.bearing_after,
+            location: step.maneuver.location,
           },
+          voiceInstructions: (step.voiceInstructions || []).map((v) => ({
+            distanceAlongGeometry: v.distanceAlongGeometry,
+            announcement: v.announcement,
+          })),
         })),
+        maxspeeds: (route.legs[0].annotation?.maxspeed || []).map(toKmh),
       };
     });
 
