@@ -41,3 +41,25 @@ export interface ChargingStation {
 export interface ChargingStationsResponse {
   stations: ChargingStation[];
 }
+
+// Quick-search categories shown as chips under the search box
+export type PlaceCategory = "charging" | "fuel" | "cafe" | "food" | "parking";
+
+// One search result, whatever the source
+export interface Place {
+  id: string;
+  category: PlaceCategory | "address";
+  name: string;
+  address: string;
+  lat: number;
+  lon: number;
+  distance: number | null; // metres: along the route when searching along it, otherwise straight line
+  detour: number | null; // metres off the route (along-route searches only)
+  badge: string | null; // "250 kW", "1.729 €"
+  price: number | null; // fuel price for the selected fuel, EUR/l
+  isTesla: boolean;
+}
+
+export interface PlacesResponse {
+  places: Place[];
+}

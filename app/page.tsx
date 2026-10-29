@@ -1,24 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Map, type MapRef } from "@/components/Map";
 import { SettingsModal } from "@/components/SettingsModal";
-import { FeedbackModal } from "@/components/FeedbackModal";
 import { NavigateSearch } from "@/components/NavigateSearch";
 import { RouteSelector } from "@/components/RouteSelector";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { usePoliceReports } from "@/hooks/usePoliceReports";
 import { useSpeedCameras } from "@/hooks/useSpeedCameras";
 import { useCameraAlerts } from "@/hooks/useCameraAlerts";
-import { useMapPlaces } from "@/hooks/useMapPlaces";
-import {
-  DEFAULT_FUEL_TYPE,
-  FUEL_TYPE_STORAGE_KEY,
-  SHOW_CHARGERS_STORAGE_KEY,
-  SHOW_FUEL_STORAGE_KEY,
-  isFuelType,
-} from "@/lib/places";
-import type { ChargingStation, FuelStation, FuelType } from "@/types/poi";
+import { DEFAULT_FUEL_TYPE, FUEL_TYPE_STORAGE_KEY, isFuelType } from "@/lib/places";
+import { routeAhead } from "@/lib/navigation";
+import type { FuelType, Place } from "@/types/poi";
 import { useTurnByTurn } from "@/hooks/useTurnByTurn";
 import { ManeuverBanner } from "@/components/ManeuverBanner";
 import { CameraWarningBanner } from "@/components/CameraWarningBanner";
@@ -43,7 +36,7 @@ import type { UnitSystem } from "@/lib/units";
 import type { MapBounds } from "@/types/waze";
 import type { RouteData, RoutesResponse } from "@/types/route";
 import Image from "next/image";
-import { APP_NAME, APP_SHORT_NAME } from "@/lib/brand";
+import { APP_NAME } from "@/lib/brand";
 import posthog from "posthog-js";
 import { ShieldExclamationIcon, ExclamationTriangleIcon, NoSymbolIcon } from "@heroicons/react/24/solid";
 
@@ -97,21 +90,8 @@ export default function Home() {
   });
   const [isCentered, setIsCentered] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false);
   const [showWazeAlerts, setShowWazeAlerts] = useState(true);
   const [showSpeedCameras, setShowSpeedCameras] = useState(true);
-  const [showChargers, setShowChargers] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(SHOW_CHARGERS_STORAGE_KEY) !== "false";
-    }
-    return true;
-  });
-  const [showFuel, setShowFuel] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(SHOW_FUEL_STORAGE_KEY) === "true";
-    }
-    return false;
-  });
   const [fuelType, setFuelType] = useState<FuelType>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(FUEL_TYPE_STORAGE_KEY);
@@ -151,6 +131,7 @@ export default function Home() {
   // Computed: currently selected route (for backward compatibility)
   const route = routes.length > 0 ? routes[selectedRouteIndex] : null;
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
   const [contextMenu, setContextMenu] = useState<{ lng: number; lat: number; screenX: number; screenY: number; placeName?: string } | null>(null);
   const [contextMenuLoading, setContextMenuLoading] = useState(false);
   // Preview location - shown on map when user searches but hasn't started navigation yet
@@ -231,26 +212,8 @@ export default function Home() {
   const promptedPoliceIdsRef = useRef<Set<string>>(new Set());
   const ownReportIdsRef = useRef<Set<string>>(new Set());
   const confirmPromptTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const { cameras, allCameras } = useSpeedCameras({ bounds, enabled: showSpeedCameras });
-  const { places: chargingStations } = useMapPlaces<ChargingStation>({
-    endpoint: "/api/chargers",
-    bounds,
-    enabled: showChargers,
-  });
-  const { places: fuelStations } = useMapPlaces<FuelStation>({
-    endpoint: "/api/fuel",
-    bounds,
-    enabled: showFuel,
-  });
-
-  const handleToggleChargers = useCallback((value: boolean) => {
-    setShowChargers(value);
-    localStorage.setItem(SHOW_CHARGERS_STORAGE_KEY, value.toString());
-  }, []);
-  const handleToggleFuel = useCallback((value: boolean) => {
-    setShowFuel(value);
-    localStorage.setItem(SHOW_FUEL_STORAGE_KEY, value.toString());
-  }, []);
+  // Camera icons only from street level: zoomed out they bury the map. Warnings use allCameras.
+  const { cameras, allCameras } = useSpeedCameras({ bounds, enabled: showSpeedCameras, minZoomLevel: 13 });
   const handleFuelTypeChange = useCallback((value: FuelType) => {
     setFuelType(value);
     localStorage.setItem(FUEL_TYPE_STORAGE_KEY, value);
@@ -277,6 +240,16 @@ export default function Home() {
     voiceEnabled,
     speechLang,
   });
+
+  // While driving only the chosen route is drawn; alternatives are for the preview.
+  // Memoised: the map redraws (and refits) its route layers whenever this array changes.
+  const mapRoutes = useMemo(() => (destination && route ? [route] : routes), [destination, route, routes]);
+
+  // While navigating, category searches look along the road ahead instead of around the car
+  const searchRouteAhead = useMemo(
+    () => (route && navProgress && latitude && longitude ? routeAhead(route, navProgress, latitude, longitude) : null),
+    [route, navProgress, latitude, longitude]
+  );
 
   // Speedometer limit: an upcoming camera's limit wins, otherwise the route's limit for this segment
   const currentSpeedLimitKmh = cameraWarning?.limitKmh ?? navProgress?.speedLimitKmh ?? null;
@@ -536,6 +509,20 @@ export default function Home() {
     }
   }, [latitude, longitude]);
 
+  // A search result (list row or map pin). While navigating it becomes the new destination right
+  // away, so guidance continues; otherwise it opens the usual route preview.
+  const handleSelectPlace = useCallback((place: Place) => {
+    setSearchResults([]);
+    if (destination) {
+      setDestination({ lng: place.lon, lat: place.lat, name: place.name });
+      setSelectedRouteIndex(0);
+      fetchRoute(place.lon, place.lat, true);
+      mapRef.current?.enableAutoCentering();
+      return;
+    }
+    handleSelectDestination(place.lon, place.lat, place.name);
+  }, [destination, fetchRoute, handleSelectDestination]);
+
   // Handle long press on map
   const handleMapLongPress = useCallback(async (lng: number, lat: number, screenX: number, screenY: number) => {
     setContextMenuLoading(true);
@@ -544,7 +531,7 @@ export default function Home() {
     // Reverse geocode to get place name
     try {
       const response = await fetch(
-        `/api/geocode/reverse?lng=${lng}&lat=${lat}`
+        `/api/geocode/reverse?lng=${lng}&lat=${lat}&language=${navLanguage}`
       );
       if (response.ok) {
         const data = await response.json();
@@ -555,7 +542,7 @@ export default function Home() {
     } finally {
       setContextMenuLoading(false);
     }
-  }, []);
+  }, [navLanguage]);
 
   // Select long-pressed location for preview (same flow as search)
   const handleNavigateToContextMenu = useCallback(() => {
@@ -1112,16 +1099,15 @@ export default function Home() {
         isDarkMode={effectiveDarkMode}
         alerts={filteredAlerts}
         speedCameras={showSpeedCameras ? cameras : []}
-        chargingStations={chargingStations}
-        fuelStations={fuelStations}
-        fuelType={fuelType}
+        places={searchResults}
+        onSelectPlace={handleSelectPlace}
         units={units}
         onBoundsChange={handleBoundsChange}
         onCenteredChange={handleCenteredChange}
         onLongPress={handleMapLongPress}
         pinLocation={contextMenu ? { lng: contextMenu.lng, lat: contextMenu.lat } : previewLocation ? { lng: previewLocation.lng, lat: previewLocation.lat } : null}
-        routes={routes}
-        selectedRouteIndex={selectedRouteIndex}
+        routes={mapRoutes}
+        selectedRouteIndex={destination ? 0 : selectedRouteIndex}
         userLocation={{ latitude, longitude, heading, effectiveHeading, speed }}
         followMode={followMode}
         showTraffic={showTraffic}
@@ -1214,19 +1200,29 @@ export default function Home() {
       })()}
 
       {/* Top Left - Turn-by-turn banner while navigating, otherwise search */}
-      <div className="absolute top-4 left-4 z-30 flex flex-col gap-3">
-        {navProgress && (
-          <ManeuverBanner progress={navProgress} units={units} isDarkMode={effectiveDarkMode} />
-        )}
-
-        {!destination && (
-          <NavigateSearch
+      {/* Capped above the speedometer so a long result list never covers it */}
+      <div className="absolute top-4 left-4 z-30 flex flex-col gap-3 max-h-[calc(100vh-15rem)]">
+        {navProgress && destination && (
+          <ManeuverBanner
+            progress={navProgress}
+            destinationName={destination.name}
+            onEnd={handleClearDestination}
+            units={units}
             isDarkMode={effectiveDarkMode}
-            onSelectDestination={handleSelectDestination}
-            onOpenChange={setIsSearchOpen}
-            userLocation={latitude && longitude ? { latitude, longitude } : null}
           />
         )}
+
+        <NavigateSearch
+          isDarkMode={effectiveDarkMode}
+          userLocation={latitude && longitude ? { latitude, longitude } : null}
+          routeAhead={destination ? searchRouteAhead : null}
+          language={navLanguage}
+          fuelType={fuelType}
+          units={units}
+          onSelectPlace={handleSelectPlace}
+          onResultsChange={setSearchResults}
+          onOpenChange={setIsSearchOpen}
+        />
 
         {/* Preview Card - Shows when a location is searched but not navigating yet */}
         {previewLocation && !destination && !isSearchOpen && (
@@ -1300,8 +1296,8 @@ export default function Home() {
           </div>
         )}
         
-        {/* Destination Card - Shows when navigating (hidden while search is open) */}
-        {destination && !isSearchOpen && (
+        {/* Destination card - only until turn-by-turn has a route to show (the banner takes over) */}
+        {destination && !navProgress && !isSearchOpen && (
           <div
             className={`
               rounded-2xl backdrop-blur-xl overflow-hidden
@@ -1462,31 +1458,6 @@ export default function Home() {
 
       {/* Bottom Left - User Location + Settings */}
       <div className="absolute bottom-6 left-4 z-30 flex items-center gap-3">
-        {latitude && longitude && (
-          <div
-            className={`
-              flex items-center gap-3 px-4 h-16 rounded-xl backdrop-blur-xl
-              ${getContainerStyles(effectiveDarkMode)}
-              shadow-lg border
-            `}
-          >
-            <Image
-              src={effectiveDarkMode ? "/maps-avatar.jpg" : "/maps-avatar-light.jpg"}
-              alt="Your location"
-              width={36}
-              height={36}
-            />
-            <div className="flex flex-col">
-              <span className="text-sm font-bold tracking-wide">
-                {APP_SHORT_NAME}
-              </span>
-              <span className={`text-[10px] ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                v0.3.0
-              </span>
-            </div>
-          </div>
-        )}
-
         {/* Settings Button */}
         <button
           onClick={() => {
@@ -1502,43 +1473,6 @@ export default function Home() {
           aria-label="Settings"
         >
           <SettingsIcon className="w-7 h-7" />
-        </button>
-
-        {/* Feedback Button */}
-        <button
-          onClick={() => {
-            setShowFeedback(true);
-            posthog.capture("feedback_modal_opened");
-          }}
-          className={`
-            w-16 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center
-            ${getButtonStyles(effectiveDarkMode)}
-            shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
-          `}
-          aria-label="Send feedback"
-        >
-          <HelpIcon className="w-7 h-7" />
-        </button>
-
-        {/* Satellite Toggle Button */}
-        <button
-          onClick={() => {
-            handleToggleSatellite(!useSatellite);
-            posthog.capture("satellite_quick_toggled", {
-              satellite_enabled: !useSatellite,
-            });
-          }}
-          className={`
-            w-16 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center
-            ${useSatellite 
-              ? "bg-blue-500/80 text-white border-blue-400/30" 
-              : getButtonStyles(effectiveDarkMode)
-            }
-            shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
-          `}
-          aria-label={useSatellite ? "Switch to standard map" : "Switch to satellite view"}
-        >
-          <span className="text-3xl leading-none">🛰️</span>
         </button>
 
         {/* Report Police Button */}
@@ -1790,10 +1724,6 @@ export default function Home() {
         onToggleWazeAlerts={setShowWazeAlerts}
         showSpeedCameras={showSpeedCameras}
         onToggleSpeedCameras={setShowSpeedCameras}
-        showChargers={showChargers}
-        onToggleChargers={handleToggleChargers}
-        showFuel={showFuel}
-        onToggleFuel={handleToggleFuel}
         fuelType={fuelType}
         onFuelTypeChange={handleFuelTypeChange}
         showTraffic={showTraffic}
@@ -1816,14 +1746,7 @@ export default function Home() {
         onToggleVoice={handleToggleVoice}
       />
 
-      {/* Feedback Modal */}
-      <FeedbackModal
-        isOpen={showFeedback}
-        onClose={() => setShowFeedback(false)}
-        isDarkMode={effectiveDarkMode}
-      />
 
-      {/* Changelog Modal - Shows once per version */}
 
       {/* Global styles for police alert animations */}
       <style jsx global>{`
@@ -2016,13 +1939,6 @@ function LocationSearchIcon({ className }: { className?: string }) {
 
 
 
-function HelpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  );
-}
 
 function WazeIcon({ className }: { className?: string }) {
   return (

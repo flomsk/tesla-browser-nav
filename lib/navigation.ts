@@ -21,7 +21,7 @@ export interface RouteProgress {
 
 const DEG_TO_M = 111320;
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -134,6 +134,43 @@ export function computeProgress(
     remainingDuration: index.total > 0 ? route.duration * (remainingDistance / index.total) : 0,
     speedLimitKmh: route.maxspeeds[match.index] ?? null,
   };
+}
+
+// Where a point sits relative to a polyline: metres along it to the closest spot, and metres away
+export function placeOnPolyline(
+  coords: [number, number][], lat: number, lng: number
+): { along: number; offset: number } {
+  if (coords.length < 2) {
+    const [lng0, lat0] = coords[0] ?? [lng, lat];
+    return { along: 0, offset: haversine(lat, lng, lat0, lng0) };
+  }
+  const match = closestSegment(coords, lat, lng, 0, coords.length);
+  let along = 0;
+  for (let i = 0; i < match.index; i++) {
+    along += haversine(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
+  }
+  const [aLng, aLat] = coords[match.index];
+  const [bLng, bLat] = coords[match.index + 1];
+  along += match.t * haversine(aLat, aLng, bLat, bLng);
+  return { along, offset: match.distance };
+}
+
+// The route still ahead of the driver, starting at their position: at most maxMeters long and
+// thinned to maxPoints vertices so it fits in a request
+export function routeAhead(
+  route: RouteData, progress: RouteProgress, lat: number, lng: number, maxMeters = 80000, maxPoints = 120
+): [number, number][] {
+  const coords = route.geometry.coordinates;
+  const ahead: [number, number][] = [[lng, lat]];
+  let travelled = 0;
+  for (let i = progress.segmentIndex + 1; i < coords.length && travelled < maxMeters; i++) {
+    const [prevLng, prevLat] = ahead[ahead.length - 1];
+    travelled += haversine(prevLat, prevLng, coords[i][1], coords[i][0]);
+    ahead.push(coords[i]);
+  }
+  if (ahead.length <= maxPoints) return ahead;
+  const stride = (ahead.length - 1) / (maxPoints - 1);
+  return Array.from({ length: maxPoints }, (_, k) => ahead[Math.round(k * stride)]);
 }
 
 // Big arrow for the maneuver banner

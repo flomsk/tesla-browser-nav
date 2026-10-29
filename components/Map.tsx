@@ -8,15 +8,12 @@ import type { UnitSystem } from "@/lib/units";
 import type { WazeAlert, MapBounds } from "@/types/waze";
 import type { SpeedCamera } from "@/types/speedcamera";
 import type { RouteData } from "@/types/route";
-import type { ChargingStation, FuelStation, FuelType } from "@/types/poi";
-import { DEFAULT_FUEL_TYPE, FAST_CHARGER_KW, escapeHtml, fuelLabel } from "@/lib/places";
+import type { Place } from "@/types/poi";
+import { escapeHtml, placeCategoryInfo } from "@/lib/places";
 
 import posthog from "posthog-js";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-
-// Per layer (fuel, chargers), closest to the map centre
-const MAX_PLACE_MARKERS = 120;
 
 interface MapProps {
   center?: [number, number]; // [lng, lat]
@@ -24,9 +21,8 @@ interface MapProps {
   isDarkMode?: boolean;
   alerts?: WazeAlert[];
   speedCameras?: SpeedCamera[];
-  fuelStations?: FuelStation[];
-  fuelType?: FuelType;
-  chargingStations?: ChargingStation[];
+  places?: Place[]; // search results shown as temporary pins
+  onSelectPlace?: (place: Place) => void;
   units?: UnitSystem;
   onBoundsChange?: (bounds: MapBounds) => void;
   onCenteredChange?: (isCentered: boolean) => void;
@@ -247,9 +243,8 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     isDarkMode = false,
     alerts = [],
     speedCameras = [],
-    fuelStations = [],
-    fuelType = DEFAULT_FUEL_TYPE,
-    chargingStations = [],
+    places = [],
+    onSelectPlace,
     units = DEFAULT_UNIT_SYSTEM,
     onBoundsChange,
     onCenteredChange,
@@ -1967,113 +1962,50 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     }
   }, [speedCameras, mapLoaded, isDarkMode, units]);
 
-  // Fuel stations (price for the chosen fuel) and EV chargers (max power).
-  // Markers are rebuilt whenever the data, fuel type or theme changes.
+  // Search results: a pill per place (category icon + price/power). Tapping one selects it.
+  const onSelectPlaceRef = useRef(onSelectPlace);
+  useEffect(() => {
+    onSelectPlaceRef.current = onSelectPlace;
+  }, [onSelectPlace]);
+
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
-    const popupBg = isDarkMode ? "#1a1a1a" : "white";
-    const popupText = isDarkMode ? "#e5e5e5" : "#374151";
-    const popupSubtext = isDarkMode ? "#9ca3af" : "#6b7280";
-    const center = map.current.getCenter();
-    const byDistance = <T extends { lat: number; lon: number }>(a: T, b: T) =>
-      Math.hypot(a.lat - center.lat, a.lon - center.lng) - Math.hypot(b.lat - center.lat, b.lon - center.lng);
-
-    // Too many DOM markers make panning sluggish in the car browser: keep the closest ones
-    const fuel = fuelStations
-      .filter((s) => s.prices[fuelType] !== undefined)
-      .sort(byDistance)
-      .slice(0, MAX_PLACE_MARKERS);
-    // Superchargers and fast chargers first so slow city sockets don't crowd them out
-    const isPriority = (s: ChargingStation) => s.isTesla || (s.maxPowerKw ?? 0) >= FAST_CHARGER_KW;
-    const chargers = [...chargingStations]
-      .sort((a, b) => Number(isPriority(b)) - Number(isPriority(a)) || byDistance(a, b))
-      .slice(0, MAX_PLACE_MARKERS);
-
-    // Colour prices against the stations on screen: cheapest third green, dearest third red
-    const prices = fuel.map((s) => s.prices[fuelType]!).sort((a, b) => a - b);
+    // Colour fuel prices against the results: cheapest third green, dearest third red
+    const prices = places.map((p) => p.price).filter((p): p is number => p !== null).sort((a, b) => a - b);
     const cheap = prices[Math.floor(prices.length / 3)] ?? 0;
     const dear = prices[Math.floor((prices.length * 2) / 3)] ?? Infinity;
 
-    const items: { id: string; lat: number; lon: number; html: string; popup: string; zIndex: number }[] = [];
-
-    for (const station of fuel) {
-      const price = station.prices[fuelType]!;
-      const color = price <= cheap ? "#16a34a" : price >= dear ? "#dc2626" : "#d97706";
-      const priceRows = Object.entries(station.prices)
-        .map(([type, value]) => `<div style="display:flex;justify-content:space-between;gap:12px;${type === fuelType ? "font-weight:700;" : ""}"><span>${fuelLabel(type as FuelType)}</span><span>${value!.toFixed(3)} €</span></div>`)
-        .join("");
-      items.push({
-        id: `fuel-${station.id}-${fuelType}-${price}`,
-        lat: station.lat,
-        lon: station.lon,
-        html: `<div class="place-pill" style="background:${color};">⛽ ${price.toFixed(3)}</div>`,
-        zIndex: 0,
-        popup: `
-          <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
-            <div class="alert-popup-header" style="margin-bottom: 4px;">⛽ ${escapeHtml(station.brand)}</div>
-            <div style="color: ${popupSubtext}; font-size: 11px; margin-bottom: 6px;">${escapeHtml(station.address)}${station.town ? `, ${escapeHtml(station.town)}` : ""}</div>
-            <div style="font-size: 12px;">${priceRows}</div>
-            ${station.hours ? `<div style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">${escapeHtml(station.hours)}</div>` : ""}
-          </div>
-        `,
-      });
-    }
-
-    for (const station of chargers) {
-      const color = station.isTesla ? "#e31937" : (station.maxPowerKw ?? 0) >= FAST_CHARGER_KW ? "#2563eb" : "#0891b2";
-      const power = station.maxPowerKw ? `${Math.round(station.maxPowerKw)} kW` : "";
-      const connectorRows = station.connectors
-        .map((c) => `<div style="display:flex;justify-content:space-between;gap:12px;"><span>${c.quantity > 1 ? `${c.quantity}× ` : ""}${escapeHtml(c.type)}</span><span>${c.powerKw ? `${Math.round(c.powerKw)} kW` : ""}</span></div>`)
-        .join("");
-      items.push({
-        id: `charger-${station.id}-${station.maxPowerKw}`,
-        lat: station.lat,
-        lon: station.lon,
-        html: `<div class="place-pill" style="background:${color};${station.isOperational === false ? "opacity:0.45;" : ""}">${station.isTesla ? "T" : "⚡"}${power ? ` ${power}` : ""}</div>`,
-        // Superchargers on top, then fast chargers
-        zIndex: station.isTesla ? 2 : isPriority(station) ? 1 : 0,
-        popup: `
-          <div class="alert-popup" style="background: ${popupBg}; color: ${popupText};">
-            <div class="alert-popup-header" style="margin-bottom: 4px;">⚡ ${escapeHtml(station.name)}</div>
-            ${station.operator ? `<div style="font-size: 12px; font-weight: 600;">${escapeHtml(station.operator)}</div>` : ""}
-            <div style="color: ${popupSubtext}; font-size: 11px; margin-bottom: 6px;">${escapeHtml(station.address)}</div>
-            <div style="font-size: 12px;">${connectorRows}</div>
-            ${station.isOperational === false ? `<div style="color: #dc2626; font-size: 11px; margin-top: 6px;">Reported not operational</div>` : ""}
-            ${station.usage ? `<div style="color: ${popupSubtext}; font-size: 10px; margin-top: 6px;">${escapeHtml(station.usage)}</div>` : ""}
-            <div style="color: ${popupSubtext}; font-size: 10px; margin-top: 4px;">Source: Open Charge Map</div>
-          </div>
-        `,
-      });
-    }
-
     const keep = new Set<string>();
-    for (const item of items) {
-      keep.add(item.id);
-      const existing = placeMarkersRef.current.get(item.id);
-      if (existing) {
-        existing.getPopup()?.setHTML(item.popup);
-        continue;
-      }
+    places.forEach((place, order) => {
+      const id = `${place.id}-${place.badge ?? ""}`;
+      keep.add(id);
+      if (placeMarkersRef.current.has(id)) return;
 
-      const el = document.createElement("div");
+      const info = place.category === "address" ? { icon: "📍", color: "#2563eb" } : placeCategoryInfo(place.category);
+      const color = place.isTesla
+        ? "#e31937"
+        : place.price !== null
+          ? place.price <= cheap ? "#16a34a" : place.price >= dear ? "#dc2626" : "#d97706"
+          : info.color;
+      const label = `${place.isTesla ? "T" : info.icon}${place.badge ? ` ${escapeHtml(place.badge)}` : ""}`;
+
+      const el = document.createElement("button");
       el.className = "place-marker";
-      el.innerHTML = item.html;
-      el.style.zIndex = String(item.zIndex);
-
-      const popup = new mapboxgl.Popup({
-        offset: 16,
-        closeButton: false,
-        maxWidth: "240px",
-        className: `alert-popup-container ${isDarkMode ? "dark" : ""}`,
-      }).setHTML(item.popup);
+      el.setAttribute("aria-label", place.name);
+      // Earlier results (closest / best) stay on top when pins overlap
+      el.style.zIndex = String(places.length - order);
+      el.innerHTML = `<div class="place-pill" style="background:${color};">${label}</div>`;
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onSelectPlaceRef.current?.(place);
+      });
 
       const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
-        .setLngLat([item.lon, item.lat])
-        .setPopup(popup)
+        .setLngLat([place.lon, place.lat])
         .addTo(map.current!);
-      placeMarkersRef.current.set(item.id, marker);
-    }
+      placeMarkersRef.current.set(id, marker);
+    });
 
     for (const [id, marker] of placeMarkersRef.current) {
       if (!keep.has(id)) {
@@ -2081,7 +2013,20 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         placeMarkersRef.current.delete(id);
       }
     }
-  }, [fuelStations, fuelType, chargingStations, mapLoaded, isDarkMode]);
+
+    // Fit the results into view (keeping the driver on screen) when a new search arrives
+    if (places.length > 0) {
+      // Stop following the car, or the next GPS fix would pan away from the results
+      isAutoCentering.current = false;
+      onCenteredChange?.(false);
+      const bounds = new mapboxgl.LngLatBounds();
+      places.forEach((p) => bounds.extend([p.lon, p.lat]));
+      if (userLocation) bounds.extend([userLocation.longitude, userLocation.latitude]);
+      map.current.fitBounds(bounds, { padding: { top: 120, bottom: 140, left: 500, right: 120 }, maxZoom: 15, duration: 600 });
+    }
+    // userLocation is read only when results change; following it would refit on every GPS fix
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [places, mapLoaded]);
 
   // Pin marker for long-press location (using Waze origin marker style)
   useEffect(() => {

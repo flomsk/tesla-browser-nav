@@ -7,6 +7,8 @@ import type { UnitSystem } from "@/lib/units";
 
 interface ManeuverBannerProps {
   progress: RouteProgress;
+  destinationName: string;
+  onEnd: () => void;
   units: UnitSystem;
   isDarkMode: boolean;
 }
@@ -16,15 +18,16 @@ function formatArrivalTime(secondsFromNow: number): string {
   return arrival.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// Large, glanceable next-maneuver card for the car screen
-export function ManeuverBanner({ progress, units, isDarkMode }: ManeuverBannerProps) {
+// Large, glanceable next-maneuver card for the car screen. Also the only trip card while
+// navigating: remaining distance, ETA, destination and the button to end the route.
+export function ManeuverBanner({ progress, destinationName, onEnd, units, isDarkMode }: ManeuverBannerProps) {
   const step = progress.nextStep;
   if (!step) return null;
 
   return (
     <div
       className={`
-        flex flex-col rounded-2xl shadow-2xl border overflow-hidden w-[440px] max-w-[calc(100vw-2rem)]
+        flex flex-shrink-0 flex-col rounded-2xl shadow-2xl border overflow-hidden w-[440px] max-w-[calc(100vw-2rem)]
         ${isDarkMode ? "bg-[#0f5132]/95 border-white/10" : "bg-[#146c43]/95 border-black/10"} text-white
       `}
       aria-live="polite"
@@ -42,9 +45,17 @@ export function ManeuverBanner({ progress, units, isDarkMode }: ManeuverBannerPr
           </span>
         </div>
       </div>
-      <div className="flex justify-between px-5 py-2 bg-black/25 text-base font-semibold tabular-nums">
+      <div className="flex items-center gap-3 pl-5 pr-2 py-1.5 bg-black/25 text-base font-semibold tabular-nums">
         <span>{formatDistance(progress.remainingDistance, units)}</span>
         <span>ETA {formatArrivalTime(progress.remainingDuration)}</span>
+        <span className="flex-1 min-w-0 truncate text-sm font-medium text-white/75">{destinationName}</span>
+        <button
+          onClick={onEnd}
+          className="h-11 px-4 rounded-lg bg-white/15 text-sm font-bold active:bg-white/30"
+          aria-label="End route"
+        >
+          End
+        </button>
       </div>
     </div>
   );

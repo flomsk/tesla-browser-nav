@@ -14,8 +14,9 @@ Built with Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4 and M
 - Camera warnings ahead of the car with a beep, voice and the camera's speed limit
 - Speedometer with the current speed limit (camera or road segment)
 - Community police reports: "Police here" button, confirmations and automatic expiry
-- EV chargers with max power, Tesla Superchargers highlighted (Open Charge Map)
-- Fuel stations with today's prices for Spain (Ministry Geoportal, no key needed)
+- One search box: addresses, or a category chip (Charging, Café, Food, Fuel, Parking); typing "supercharger" or "café" works too
+- While navigating, search looks along the route ahead and a pick becomes the new destination
+- Chargers with max power and Superchargers first (Open Charge Map), fuel with today's prices for Spain (Ministry Geoportal)
 - Kilometers or miles
 - Map tile and camera data caching through a service worker
 
@@ -38,7 +39,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Add `?dev=true` to get a **Simulate** button that drives the selected route.
 
-Pick a destination with a long press (right-click on desktop) on the map. Address search needs `LOCATION_IQ_TOKEN`.
+Search an address or tap a category, or long-press (right-click on desktop) the map to pick a point.
 
 ### Commands
 
@@ -57,25 +58,21 @@ See [.env.example](./.env.example). Only `NEXT_PUBLIC_MAPBOX_TOKEN` is required.
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Map, directions, voice instructions |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Map, directions, voice instructions, address and place search |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared storage for police reports. Without it reports live in process memory (fine for one Node process, not for serverless) |
-| `OPEN_CHARGE_MAP_KEY` | EV chargers layer ([free key](https://openchargemap.org/site/develop/api)) |
-| `LOCATION_IQ_TOKEN` | Address search and reverse geocoding |
+| `OPEN_CHARGE_MAP_KEY` | Charger power and connectors in charging search ([free key](https://openchargemap.org/profile/applications)); without it Mapbox results are used |
 | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | Analytics (optional) |
-| `INBOUND_API_KEY`, `EMAIL_FROM`, `FEEDBACK_EMAIL` | Feedback form emails (optional) |
-| `ADMIN_SECRET`, `ALERT_EMAIL`, `APP_URL` | `/admin` usage dashboard and usage alerts (optional; the admin API is disabled without `ADMIN_SECRET`) |
+| `ADMIN_SECRET`, `INBOUND_API_KEY`, `EMAIL_FROM`, `ALERT_EMAIL`, `APP_URL` | `/admin` usage dashboard and usage alert emails (optional; the admin API is disabled without `ADMIN_SECRET`) |
 
 ## Architecture
 
 ```
 app/api/
   directions/      # Mapbox Directions: routes, steps, voice instructions, speed limits
-  geocode/         # LocationIQ forward + reverse geocoding
+  geocode/         # Address search + reverse geocoding (Mapbox Search Box)
+  places/          # Category search near the car or along the route (Mapbox, Open Charge Map, fuel prices)
   police/          # Community police reports and votes
-  fuel/            # Fuel stations + prices (Spanish Ministry Geoportal)
-  chargers/        # EV chargers (Open Charge Map)
   recording/       # GPX track storage
-  feedback/        # Feedback emails
   admin/usage/     # API usage stats + threshold alerts
 components/        # UI (map, maneuver banner, camera warning, speedometer, ...)
 hooks/             # GPS, turn-by-turn progress, camera alerts, police reports

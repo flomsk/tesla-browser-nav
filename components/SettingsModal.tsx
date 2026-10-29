@@ -19,10 +19,6 @@ interface SettingsModalProps {
   onToggleWazeAlerts: (value: boolean) => void;
   showSpeedCameras: boolean;
   onToggleSpeedCameras: (value: boolean) => void;
-  showChargers: boolean;
-  onToggleChargers: (value: boolean) => void;
-  showFuel: boolean;
-  onToggleFuel: (value: boolean) => void;
   fuelType: FuelType;
   onFuelTypeChange: (value: FuelType) => void;
   showTraffic: boolean;
@@ -57,10 +53,6 @@ export function SettingsModal({
   onToggleWazeAlerts,
   showSpeedCameras,
   onToggleSpeedCameras,
-  showChargers,
-  onToggleChargers,
-  showFuel,
-  onToggleFuel,
   fuelType,
   onFuelTypeChange,
   showTraffic,
@@ -258,58 +250,36 @@ export function SettingsModal({
                   />
                 </div>
 
-                {/* EV Chargers Toggle */}
-                <div className={`
-                  flex items-center justify-between p-5 rounded-xl
-                  ${isDarkMode ? "bg-white/5" : "bg-black/5"}
-                `}>
-                  <div className="flex items-center gap-4">
-                    <span className="text-3xl">⚡</span>
-                    <div>
-                      <div className="text-lg font-medium">Charging Stations</div>
-                      <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Superchargers and other EV chargers with max power (Open Charge Map)
-                      </div>
-                    </div>
-                  </div>
-                  <Toggle enabled={showChargers} onToggle={onToggleChargers} isDarkMode={isDarkMode} />
-                </div>
-
-                {/* Fuel Prices Toggle */}
+                {/* Fuel type used to price and sort fuel search results */}
                 <div className={`
                   p-5 rounded-xl
                   ${isDarkMode ? "bg-white/5" : "bg-black/5"}
                 `}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <span className="text-3xl">⛽</span>
-                      <div>
-                        <div className="text-lg font-medium">Fuel Prices</div>
-                        <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                          Petrol stations with today&apos;s price (Spanish Ministry, updated every 30 min)
-                        </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-3xl">⛽</span>
+                    <div>
+                      <div className="text-lg font-medium">Fuel for price search</div>
+                      <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                        Prices shown when you search for fuel (Spain)
                       </div>
                     </div>
-                    <Toggle enabled={showFuel} onToggle={onToggleFuel} isDarkMode={isDarkMode} />
                   </div>
-                  {showFuel && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {FUEL_TYPES.map((option) => (
-                        <button
-                          key={option.code}
-                          onClick={() => onFuelTypeChange(option.code)}
-                          className={`
-                            h-12 px-4 rounded-xl text-base font-medium transition-colors
-                            ${fuelType === option.code
-                              ? "bg-blue-500 text-white"
-                              : isDarkMode ? "bg-white/10 text-gray-300" : "bg-black/10 text-gray-700"}
-                          `}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {FUEL_TYPES.map((option) => (
+                      <button
+                        key={option.code}
+                        onClick={() => onFuelTypeChange(option.code)}
+                        className={`
+                          h-12 px-4 rounded-xl text-base font-medium transition-colors
+                          ${fuelType === option.code
+                            ? "bg-blue-500 text-white"
+                            : isDarkMode ? "bg-white/10 text-gray-300" : "bg-black/10 text-gray-700"}
+                        `}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Traffic Toggle */}
