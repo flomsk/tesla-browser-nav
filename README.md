@@ -76,7 +76,7 @@ See [.env.example](./.env.example). Only `NEXT_PUBLIC_MAPBOX_TOKEN` is required.
 Any Node host works (`npm run build && npm run start`). The plan is Vercel in an EU region:
 
 1. Import `flomsk/tesla-browser-nav` in Vercel.
-2. Add the environment variables from the table above. For police reports on Vercel, create a free Upstash Redis database and set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` — serverless functions don't share memory.
+2. Add the environment variables from the table above. For police reports on Vercel, create a free Upstash Redis database and set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or connect it through the Vercel integration with prefix `KV`; `KV_REST_API_URL` / `KV_REST_API_TOKEN` are read too) — serverless functions don't share memory.
 3. Open the deployed URL in the Tesla browser and add it to favourites.
 
 Mapbox demo access (no card) has lower usage caps than a standard account; add a payment method in Mapbox if the app is used regularly (the free monthly tier still applies).

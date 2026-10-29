@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { redisToken, redisUrl } from "@/lib/redis";
 import type { WazeAlert } from "@/types/waze";
 
 // Crowdsourced police reports, Waze-style:
@@ -100,8 +101,8 @@ const globalForStore = globalThis as unknown as { policeStore?: Store };
 
 function getStore(): Store {
   if (!globalForStore.policeStore) {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const url = redisUrl;
+    const token = redisToken;
     globalForStore.policeStore = url && token
       ? createRedisStore(new Redis({ url, token }))
       : createMemoryStore();
