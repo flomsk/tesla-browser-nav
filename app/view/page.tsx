@@ -125,6 +125,8 @@ export default function ViewPage() {
     duration: 0,
     steps: [],
     maxspeeds: [],
+    congestion: [],
+    segmentDurations: [],
     summary: "Recorded track",
   } : null;
 

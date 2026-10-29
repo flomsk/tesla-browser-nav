@@ -13,6 +13,7 @@ Built with Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4 and M
 - Speed cameras for Spain, bundled offline: DGT, Servei Català de Trànsit and OpenStreetMap
 - Camera warnings ahead of the car with a beep, voice and the camera's speed limit
 - Speedometer with the current speed limit (camera or road segment)
+- Live traffic: route line coloured by congestion, spoken warning before a jam (length and delay), and every 3 minutes a check for a faster way (offered when it saves 3+ minutes)
 - Community police reports: "Police here" button, confirmations and automatic expiry
 - Live DGT incidents (accidents, closures, obstacles, slow traffic, roadworks): pins and a spoken warning for the ones on your route in your direction; without a route, hazards straight ahead. Spain except Catalonia and the Basque Country
 - One search box: addresses, or a category chip (Charging, Café, Food, Fuel, Parking); typing "supercharger" or "café" works too

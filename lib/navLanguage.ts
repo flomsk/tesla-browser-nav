@@ -37,6 +37,10 @@ const PHRASES = {
     rerouting: "Rerouting",
     ready: "Voice guidance on",
     eventAhead: (label: string, distance: string) => `${label} in ${distance}`,
+    jamLabel: "Traffic jam",
+    jamAhead: (distance: string, length: string, minutes: number) =>
+      `Traffic jam in ${distance}, ${length} long, ${minutes} ${minutes === 1 ? "minute" : "minutes"} delay`,
+    fasterRoute: (minutes: number) => `Faster route found, saves ${minutes} ${minutes === 1 ? "minute" : "minutes"}`,
     events: {
       accident: "Accident", closure: "Road closed", vehicleFire: "Vehicle on fire",
       stoppedVehicle: "Stopped vehicle", obstacle: "Obstacle on the road", rockfall: "Rockfall",
@@ -53,6 +57,10 @@ const PHRASES = {
     rerouting: "Recalculando la ruta",
     ready: "Guía por voz activada",
     eventAhead: (label: string, distance: string) => `${label} a ${distance}`,
+    jamLabel: "Atasco",
+    jamAhead: (distance: string, length: string, minutes: number) =>
+      `Atasco a ${distance}, de ${length}, ${minutes} ${minutes === 1 ? "minuto" : "minutos"} de retraso`,
+    fasterRoute: (minutes: number) => `Hay una ruta más rápida, ahorra ${minutes} ${minutes === 1 ? "minuto" : "minutos"}`,
     events: {
       accident: "Accidente", closure: "Carretera cortada", vehicleFire: "Vehículo en llamas",
       stoppedVehicle: "Vehículo detenido", obstacle: "Obstáculo en la calzada", rockfall: "Desprendimientos",
@@ -69,6 +77,10 @@ const PHRASES = {
     rerouting: "Перестраиваю маршрут",
     ready: "Голосовые подсказки включены",
     eventAhead: (label: string, distance: string) => `${label} через ${distance}`,
+    jamLabel: "Пробка",
+    jamAhead: (distance: string, length: string, minutes: number) =>
+      `Пробка через ${distance}, длина ${length}, задержка ${minutes} ${ruPlural(minutes, "минута", "минуты", "минут")}`,
+    fasterRoute: (minutes: number) => `Есть маршрут быстрее на ${minutes} ${ruPlural(minutes, "минуту", "минуты", "минут")}`,
     events: {
       accident: "Авария", closure: "Дорога перекрыта", vehicleFire: "Горит машина",
       stoppedVehicle: "Стоящая машина", obstacle: "Препятствие на дороге", rockfall: "Камнепад",

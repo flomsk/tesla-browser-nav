@@ -7,13 +7,21 @@ import { DEFAULT_UNIT_SYSTEM, formatSpeedLimit } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
 import type { WazeAlert, MapBounds } from "@/types/waze";
 import type { SpeedCamera } from "@/types/speedcamera";
-import type { RouteData } from "@/types/route";
+import type { Congestion, RouteData } from "@/types/route";
+import { congestionRuns } from "@/lib/traffic";
 import type { Place } from "@/types/poi";
 import { escapeHtml, placeCategoryInfo } from "@/lib/places";
 
 import posthog from "posthog-js";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+// Route line colours by traffic (free-flowing and unknown stay route blue)
+const TRAFFIC_COLORS: Partial<Record<Congestion, string>> = {
+  moderate: "#f59e0b",
+  heavy: "#ef4444",
+  severe: "#991b1b",
+};
 
 interface MapProps {
   center?: [number, number]; // [lng, lat]
@@ -31,6 +39,7 @@ interface MapProps {
   route?: RouteData | null; // Legacy single route support
   routes?: RouteData[]; // Multiple routes for selection
   selectedRouteIndex?: number; // Which route is selected (0 = first/fastest)
+  fitRoutes?: boolean; // zoom to the routes when they change (off while driving: follow the car instead)
   userLocation?: { 
     latitude: number; 
     longitude: number; 
@@ -253,6 +262,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     route,
     routes = [],
     selectedRouteIndex = 0,
+    fitRoutes = true,
     userLocation,
     followMode = false,
     showTraffic = false,
@@ -2094,6 +2104,9 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         }
       }
       
+      if (mapInstance.getLayer("route-traffic-layer")) mapInstance.removeLayer("route-traffic-layer");
+      if (mapInstance.getSource("route-traffic-source")) mapInstance.removeSource("route-traffic-source");
+
       // Also remove legacy single route layers
       if (mapInstance.getLayer("route-layer")) {
         mapInstance.removeLayer("route-layer");
@@ -2216,9 +2229,32 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
           },
         });
 
+        // Traffic on the selected route: slow / jammed stretches drawn over the blue line
+        const trafficRuns = congestionRuns(selectedRoute).filter((r) => r.level in TRAFFIC_COLORS);
+        if (trafficRuns.length > 0) {
+          mapInstance.addSource("route-traffic-source", {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: trafficRuns.map((run) => ({
+                type: "Feature" as const,
+                properties: { color: TRAFFIC_COLORS[run.level] },
+                geometry: { type: "LineString" as const, coordinates: run.coordinates },
+              })),
+            },
+          });
+          mapInstance.addLayer({
+            id: "route-traffic-layer",
+            type: "line",
+            source: "route-traffic-source",
+            layout: { "line-join": "round", "line-cap": "round" },
+            paint: { "line-color": ["get", "color"], "line-width": 6 },
+          });
+        }
+
         // Fit map to show the selected route
         const coordinates = selectedRoute.geometry.coordinates;
-        if (coordinates.length > 0) {
+        if (fitRoutes && coordinates.length > 0) {
           const bounds = coordinates.reduce(
             (bnds, coord) => bnds.extend(coord as [number, number]),
             new mapboxgl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number])
@@ -2247,7 +2283,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
     return () => {
       mapInstance.off("style.load", handleStyleLoad);
     };
-  }, [route, routes, selectedRouteIndex, mapLoaded, isDarkMode]);
+  }, [route, routes, selectedRouteIndex, mapLoaded, isDarkMode, fitRoutes]);
 
   return (
     <>

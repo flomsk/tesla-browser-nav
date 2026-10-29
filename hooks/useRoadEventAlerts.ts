@@ -35,7 +35,8 @@ export function useRoadEventAlerts({
   const routeEvents = useMemo(() => (route ? eventsOnRoute(events, route) : []), [events, route]);
 
   const warning = useMemo(() => {
-    if (route && progress) return nextRouteWarning(routeEvents, progress.distanceAlong);
+    // On a route, slow traffic is covered (better) by the live jam warnings from route traffic
+    if (route && progress) return nextRouteWarning(routeEvents.filter((r) => r.event.kind !== "slowTraffic"), progress.distanceAlong);
     // Free driving: only clear-cut hazards, and only when moving (heading is noise when parked)
     if (latitude === null || longitude === null || heading === null || speed === null || speed < 3) return null;
     return warningByHeading(events.filter(shownWithoutRoute), latitude, longitude, heading);

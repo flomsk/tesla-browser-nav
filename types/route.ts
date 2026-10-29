@@ -17,6 +17,9 @@ export interface RouteStep {
   voiceInstructions: VoiceInstruction[];
 }
 
+// Mapbox traffic level per geometry segment
+export type Congestion = "unknown" | "low" | "moderate" | "heavy" | "severe";
+
 export interface RouteData {
   id: string;
   geometry: {
@@ -29,6 +32,9 @@ export interface RouteData {
   summary: string; // e.g., "via A-2"
   // Speed limit in km/h for each geometry segment (coordinates[i] -> coordinates[i + 1]), null if unknown
   maxspeeds: (number | null)[];
+  // Traffic at request time, per geometry segment: level and expected seconds to drive it
+  congestion: Congestion[];
+  segmentDurations: number[];
 }
 
 export interface RoutesResponse {

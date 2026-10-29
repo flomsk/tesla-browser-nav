@@ -13,6 +13,10 @@ import { useRoadEvents } from "@/hooks/useRoadEvents";
 import { useRoadEventAlerts } from "@/hooks/useRoadEventAlerts";
 import { shownWithoutRoute, toMapAlert } from "@/lib/roadEventAlerts";
 import { RoadEventBanner } from "@/components/RoadEventBanner";
+import { useTrafficAlerts } from "@/hooks/useTrafficAlerts";
+import { useFasterRoute } from "@/hooks/useFasterRoute";
+import { TrafficJamBanner } from "@/components/TrafficJamBanner";
+import { FasterRouteCard } from "@/components/FasterRouteCard";
 import { DEFAULT_FUEL_TYPE, FUEL_TYPE_STORAGE_KEY, isFuelType } from "@/lib/places";
 import { routeAhead } from "@/lib/navigation";
 import type { FuelType, Place } from "@/types/poi";
@@ -277,9 +281,43 @@ export default function Home() {
       .map((e) => toMapAlert(e, labels[e.kind]));
   }, [destination, navProgress?.distanceAlong, routeEvents, roadEvents, bounds, navLanguage]);
 
-  // While driving only the chosen route is drawn; alternatives are for the preview.
-  // Memoised: the map redraws (and refits) its route layers whenever this array changes.
-  const mapRoutes = useMemo(() => (destination && route ? [route] : routes), [destination, route, routes]);
+  // Live traffic while navigating: the next jam on the route, and every few minutes a fresh
+  // calculation that either updates the current route's traffic or offers a faster way
+  const jamWarning = useTrafficAlerts({
+    route: destination ? route : null,
+    progress: navProgress,
+    units,
+    language: navLanguage,
+    speechLang,
+    voiceEnabled,
+  });
+  const replaceRoute = useCallback((next: RouteData) => {
+    setRoutes([next]);
+    setSelectedRouteIndex(0);
+  }, []);
+  const { offer: fasterRoute, accept: acceptFasterRoute, dismiss: dismissFasterRoute } = useFasterRoute({
+    destination,
+    route: destination ? route : null,
+    progress: navProgress,
+    latitude,
+    longitude,
+    units,
+    language: navLanguage,
+    speechLang,
+    voiceEnabled,
+    onRefresh: replaceRoute,
+  });
+  const handleTakeFasterRoute = useCallback(() => {
+    const next = acceptFasterRoute();
+    if (next) replaceRoute(next);
+  }, [acceptFasterRoute, replaceRoute]);
+
+  // While driving only the chosen route is drawn (plus an offered faster one); alternatives
+  // are for the preview. Memoised: the map redraws its route layers whenever this array changes.
+  const mapRoutes = useMemo(() => {
+    if (!destination || !route) return routes;
+    return fasterRoute ? [route, fasterRoute.route] : [route];
+  }, [destination, route, routes, fasterRoute]);
 
   // While navigating, category searches look along the road ahead instead of around the car
   const searchRouteAhead = useMemo(
@@ -506,6 +544,8 @@ export default function Home() {
     
     setDestination(previewLocation);
     setPreviewLocation(null);
+    // Follow the car from the start (the preview left the map showing the whole route)
+    mapRef.current?.enableAutoCentering();
     // Set last origin to current position for off-route detection
     if (latitude && longitude) {
       lastRouteOriginRef.current = { lat: latitude, lng: longitude };
@@ -1148,6 +1188,7 @@ export default function Home() {
         pinLocation={contextMenu ? { lng: contextMenu.lng, lat: contextMenu.lat } : previewLocation ? { lng: previewLocation.lng, lat: previewLocation.lat } : null}
         routes={mapRoutes}
         selectedRouteIndex={destination ? 0 : selectedRouteIndex}
+        fitRoutes={!destination}
         userLocation={{ latitude, longitude, heading, effectiveHeading, speed }}
         followMode={followMode}
         showTraffic={showTraffic}
@@ -1249,6 +1290,15 @@ export default function Home() {
             onEnd={handleClearDestination}
             units={units}
             isDarkMode={effectiveDarkMode}
+          />
+        )}
+
+        {fasterRoute && (
+          <FasterRouteCard
+            offer={fasterRoute}
+            units={units}
+            onAccept={handleTakeFasterRoute}
+            onDismiss={dismissFasterRoute}
           />
         )}
 
@@ -1480,10 +1530,11 @@ export default function Home() {
       </div>
 
       {/* Top Center - Speed camera and road incident warnings */}
-      {(cameraWarning || roadEventWarning) && (
+      {(cameraWarning || roadEventWarning || jamWarning) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3">
           {cameraWarning && <CameraWarningBanner warning={cameraWarning} units={units} />}
           {roadEventWarning && <RoadEventBanner warning={roadEventWarning} units={units} language={navLanguage} />}
+          {jamWarning && <TrafficJamBanner warning={jamWarning} units={units} language={navLanguage} />}
         </div>
       )}
 

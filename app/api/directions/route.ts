@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trackApiUsage } from "@/lib/redis";
 import { NAV_LANGUAGES } from "@/lib/navLanguage";
-import type { RouteData, RoutesResponse } from "@/types/route";
+import type { Congestion, RouteData, RoutesResponse } from "@/types/route";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -11,6 +11,12 @@ type MapboxMaxspeed = { speed?: number; unit?: "km/h" | "mph"; unknown?: boolean
 function toKmh(maxspeed: MapboxMaxspeed): number | null {
   if (maxspeed.speed === undefined) return null;
   return maxspeed.unit === "mph" ? Math.round(maxspeed.speed * 1.609344) : maxspeed.speed;
+}
+
+const CONGESTION_LEVELS = new Set<Congestion>(["unknown", "low", "moderate", "heavy", "severe"]);
+
+function toCongestion(value: string): Congestion {
+  return CONGESTION_LEVELS.has(value as Congestion) ? (value as Congestion) : "unknown";
 }
 
 export async function GET(request: NextRequest) {
@@ -82,7 +88,7 @@ export async function GET(request: NextRequest) {
       duration: number;
       legs: Array<{
         summary: string;
-        annotation?: { maxspeed?: MapboxMaxspeed[] };
+        annotation?: { maxspeed?: MapboxMaxspeed[]; congestion?: string[]; duration?: number[] };
         steps: Array<{
           maneuver: {
             instruction: string;
@@ -124,6 +130,8 @@ export async function GET(request: NextRequest) {
           })),
         })),
         maxspeeds: (route.legs[0].annotation?.maxspeed || []).map(toKmh),
+        congestion: (route.legs[0].annotation?.congestion || []).map(toCongestion),
+        segmentDurations: route.legs[0].annotation?.duration || [],
       };
     });
 
