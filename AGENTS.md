@@ -122,6 +122,11 @@ Ruled out: Google Places / Apple Maps POIs (their terms forbid showing them on a
 
 - **Speed cameras:** cone ±35° ahead of heading; warn at clamp(speed × 20 s, 300 m, 800 m);
   re-alert after 10 min; icons from zoom 13 (warnings use all cameras regardless of zoom).
+- **Camera dataset cleanup** (`build-cameras-es.mjs`): OSM type comes from the node's
+  `enforcement` relations (average_speed → section, traffic_signals → red light); OSM nodes are
+  dropped if mobile/temporary, "PREaviso" signs, "pedagògic" boards, seatbelt/STOP cameras,
+  lifecycle-prefixed, or not edited since 2021; OSM within 150 m of an official camera (any type)
+  is a duplicate; same-type OSM within 30 m and DGT cabins within 30 m of a section end merge.
 - **Police reports:** live 30 min after the last confirmation, at most 3 h; a "not there" vote caps
   the rest at 10 min; removed when down > up; reports within 200 m merge; 6 reports / 10 min per IP.
 - **DGT incidents:**

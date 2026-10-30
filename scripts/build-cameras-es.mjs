@@ -17,8 +17,15 @@ const DGT_URL = "https://nap.dgt.es/datex2/dgt/PredefinedLocationsPublication/ra
 const SCT_URL = "https://transit.gencat.cat/web/.content/documents/seguretat_viaria/radars.txt";
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
-// OSM cameras closer than this to an official one are treated as duplicates
+// OSM cameras closer than this to an official one (of any type) are treated as duplicates
 const DEDUP_RADIUS_METERS = 150;
+
+// A DGT cabin this close to an average speed section end, or OSM cameras of one type this close
+// to each other, are the same site: keep one marker
+const COLOCATED_RADIUS_METERS = 30;
+
+// OSM cameras not edited since before this date are likely gone (agreed cut-off: 2021 or earlier)
+const OSM_STALE_BEFORE = "2022-01-01";
 
 const OUT_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "data", "cameras-es.json");
 
@@ -208,7 +215,55 @@ function parseSct(text) {
 
 // --- OpenStreetMap -----------------------------------------------------------
 
+// Free-text tags mappers use to describe a camera
+const OSM_TEXT_KEYS = ["note", "note_1", "note_2", "description", "description:es", "fixme", "name"];
+
+// Relation enforcement=* values that are about speed or red lights
+const SPEED_ENFORCEMENTS = new Set(["maxspeed", "average_speed", "traffic_signals", "red_light_camera"]);
+
+// Why an OSM node shouldn't be shown as a camera, or undefined to keep it.
+// `enforcements` are the enforcement=* values of the relations the node belongs to.
+function osmDropReason(el, enforcements) {
+  const tags = el.tags || {};
+  const text = OSM_TEXT_KEYS.map((key) => tags[key] || "").join(" ").toLowerCase();
+
+  if (Object.keys(tags).some((key) => /^(disused|removed|abandoned|demolished|was):/.test(key))) return "removed";
+  if (el.timestamp && el.timestamp < OSM_STALE_BEFORE) return "stale";
+  // Trailer / tripod / mobile spots, not fixed cameras
+  if (tags["temporary"] === "yes" || /itinerante|remolque|m[óo]vil|tr[ií]pode|\btrip\b/.test(text)) return "mobile";
+  // Advance warning signs ("PREaviso") mapped as cameras
+  if (/\bpre(aviso)?\b/.test(text)) return "warningSign";
+  // Speed display boards that don't fine ("radar pedagògic, no multa")
+  if (/pedag|no multa/.test(text)) return "speedDisplay";
+  // Seatbelt cameras, stop-line enforcement
+  if (/no es un radar|\bstop\b/.test(text)) return "notSpeed";
+  if (enforcements.size > 0 && ![...enforcements].some((e) => SPEED_ENFORCEMENTS.has(e))) return "notSpeed";
+  return undefined;
+}
+
+function osmType(tags, enforcements) {
+  if (tags["enforcement"] === "average_speed" || enforcements.has("average_speed")) {
+    return "average_speed_camera";
+  }
+  const text = OSM_TEXT_KEYS.map((key) => tags[key] || "").join(" ").toLowerCase();
+  if (
+    tags["red_light_camera"] === "yes" ||
+    tags["highway"] === "traffic_signals" ||
+    tags["speed_camera"] === "traffic_signals" ||
+    ["traffic_signals", "red_light_camera"].includes(tags["enforcement"]) ||
+    enforcements.has("traffic_signals") ||
+    enforcements.has("red_light_camera") ||
+    // "SEM …" notes come from a red light camera list
+    /sem[áa]for|en rojo|^\s*sem\b/.test(text)
+  ) {
+    return "red_light_camera";
+  }
+  return "speed_camera";
+}
+
 async function fetchOsm() {
+  // Nodes with metadata (last edit), then the enforcement relations they belong to: a node's
+  // relation tells an average speed section or a red light camera from a plain speed camera.
   const query = `
     [out:json][timeout:180];
     area["ISO3166-1"="ES"][admin_level=2]->.es;
@@ -217,7 +272,9 @@ async function fetchOsm() {
       node["enforcement"~"^(maxspeed|average_speed)$"](area.es);
       node["highway"="traffic_signals"]["red_light_camera"="yes"](area.es);
       node["highway"="traffic_signals"]["enforcement:maxspeed"="yes"](area.es);
-    );
+    )->.cameras;
+    .cameras out meta;
+    rel(bn.cameras)["enforcement"];
     out body;
   `;
 
@@ -229,52 +286,95 @@ async function fetchOsm() {
     })
   );
 
-  return (json.elements || [])
-    .filter((el) => el.type === "node")
-    .map((el) => {
-      const tags = el.tags || {};
-      let type = "speed_camera";
-      if (tags["enforcement"] === "average_speed") {
-        type = "average_speed_camera";
-      } else if (tags["red_light_camera"] === "yes" || tags["highway"] === "traffic_signals") {
-        type = "red_light_camera";
-      }
-      return {
-        id: `osm-${el.id}`,
-        type,
-        location: { lat: round(el.lat), lon: round(el.lon) },
-        maxspeed: tags["maxspeed"] || tags["enforcement:maxspeed:limit"],
-        direction: tags["direction"] || tags["enforcement:direction"],
-        name: tags["name"],
-        ref: tags["ref"],
-        source: "osm",
-      };
-    });
-}
-
-// Drop OSM cameras that duplicate an official one (official data wins).
-// Uses a coarse grid so we don't compare every pair.
-function dedupe(official, osm) {
-  const cell = (p) => `${Math.floor(p.lat * 100)},${Math.floor(p.lon * 100)}`;
-  const grid = new Map();
-  for (const camera of official) {
-    const key = cell(camera.location);
-    if (!grid.has(key)) grid.set(key, []);
-    grid.get(key).push(camera);
+  const elements = json.elements || [];
+  const enforcementsByNode = new Map();
+  for (const rel of elements.filter((el) => el.type === "relation")) {
+    for (const member of rel.members || []) {
+      if (member.type !== "node") continue;
+      if (!enforcementsByNode.has(member.ref)) enforcementsByNode.set(member.ref, new Set());
+      enforcementsByNode.get(member.ref).add(rel.tags?.enforcement);
+    }
   }
 
-  return osm.filter((camera) => {
-    const lat = Math.floor(camera.location.lat * 100);
-    const lon = Math.floor(camera.location.lon * 100);
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        for (const other of grid.get(`${lat + dy},${lon + dx}`) || []) {
-          if (other.type === camera.type && distanceMeters(other.location, camera.location) < DEDUP_RADIUS_METERS) {
-            return false;
+  const dropped = {};
+  const cameras = [];
+  for (const el of elements.filter((el) => el.type === "node")) {
+    const enforcements = enforcementsByNode.get(el.id) || new Set();
+    const reason = osmDropReason(el, enforcements);
+    if (reason) {
+      dropped[reason] = (dropped[reason] || 0) + 1;
+      continue;
+    }
+
+    const tags = el.tags || {};
+    cameras.push({
+      id: `osm-${el.id}`,
+      type: osmType(tags, enforcements),
+      location: { lat: round(el.lat), lon: round(el.lon) },
+      maxspeed: tags["maxspeed"] || tags["enforcement:maxspeed:limit"],
+      direction: tags["direction"] || tags["enforcement:direction"],
+      name: tags["name"],
+      ref: tags["ref"],
+      source: "osm",
+    });
+  }
+
+  return { cameras, dropped, total: cameras.length + Object.values(dropped).reduce((a, b) => a + b, 0) };
+}
+
+// --- Deduplication -----------------------------------------------------------
+
+// Coarse grid (~1 km cells) so we don't compare every pair; fine for radii well under a cell
+function spatialIndex() {
+  const grid = new Map();
+  const cell = (lat, lon) => `${lat},${lon}`;
+  return {
+    add(camera) {
+      const key = cell(Math.floor(camera.location.lat * 100), Math.floor(camera.location.lon * 100));
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(camera);
+    },
+    some(camera, radius, predicate = () => true) {
+      const lat = Math.floor(camera.location.lat * 100);
+      const lon = Math.floor(camera.location.lon * 100);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          for (const other of grid.get(cell(lat + dy, lon + dx)) || []) {
+            if (predicate(other) && distanceMeters(other.location, camera.location) < radius) return true;
           }
         }
       }
-    }
+      return false;
+    },
+  };
+}
+
+// DGT lists some cameras several times (same road, PK and direction), and a section's ends
+// usually sit on a cabin: keep one marker per site, preferring the section end.
+function dedupeDgt(dgt) {
+  const sections = spatialIndex();
+  for (const camera of dgt) if (camera.type === "average_speed_camera") sections.add(camera);
+
+  const seen = new Set();
+  return dgt.filter((camera) => {
+    const key = `${camera.type} ${camera.location.lat} ${camera.location.lon}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return camera.type === "average_speed_camera" || !sections.some(camera, COLOCATED_RADIUS_METERS);
+  });
+}
+
+// Drop OSM cameras that duplicate an official one of any type (official data wins): OSM often
+// maps a section's end cameras as plain speed cameras. Then keep one OSM camera per site, since
+// OSM often has one node per lane.
+function dedupeOsm(official, osm) {
+  const index = spatialIndex();
+  for (const camera of official) index.add(camera);
+  const kept = spatialIndex();
+  return osm.filter((camera) => {
+    if (index.some(camera, DEDUP_RADIUS_METERS)) return false;
+    if (kept.some(camera, COLOCATED_RADIUS_METERS, (other) => other.type === camera.type)) return false;
+    kept.add(camera);
     return true;
   });
 }
@@ -284,16 +384,17 @@ function stripUndefined(camera) {
 }
 
 async function main() {
-  const [dgtXml, sctText, osmAll] = await Promise.all([
+  const [dgtXml, sctText, osmResult] = await Promise.all([
     fetchText(DGT_URL),
     fetchText(SCT_URL),
     fetchOsm(),
   ]);
 
-  const dgt = parseDgt(dgtXml);
+  const dgtAll = parseDgt(dgtXml);
+  const dgt = dedupeDgt(dgtAll);
   const sct = parseSct(sctText);
   const official = [...dgt, ...sct];
-  const osm = dedupe(official, osmAll);
+  const osm = dedupeOsm(official, osmResult.cameras);
 
   // Spain incl. Canary and Balearic Islands, Ceuta and Melilla
   const inSpain = ({ location: { lat, lon } }) => lat > 27 && lat < 44.5 && lon > -18.5 && lon < 4.5;
@@ -301,15 +402,24 @@ async function main() {
 
   const output = {
     generatedAt: new Date().toISOString(),
-    counts: { dgt: dgt.length, sct: sct.length, osm: osm.length, osmDuplicatesDropped: osmAll.length - osm.length },
+    counts: {
+      dgt: dgt.length,
+      dgtDuplicatesDropped: dgtAll.length - dgt.length,
+      sct: sct.length,
+      osm: osm.length,
+      osmDuplicatesDropped: osmResult.cameras.length - osm.length,
+      ...Object.fromEntries(Object.entries(osmResult.dropped).map(([reason, n]) => [`osmDropped_${reason}`, n])),
+    },
     cameras,
   };
 
   await mkdir(dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, JSON.stringify(output));
 
+  const byType = {};
+  for (const camera of cameras) byType[camera.type] = (byType[camera.type] || 0) + 1;
   console.log(`Wrote ${cameras.length} cameras to ${OUT_FILE}`);
-  console.log(output.counts);
+  console.log(output.counts, byType);
 }
 
 main().catch((error) => {
