@@ -415,6 +415,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       if (!map.current) return null;
       const center = map.current.getCenter();
       const view = map.current.getBounds();
+      if (!view) return null;
       return {
         center: [center.lng, center.lat],
         bounds: { left: view.getWest(), right: view.getEast(), bottom: view.getSouth(), top: view.getNorth() },
@@ -2054,7 +2055,7 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       // the results, or the view would jump back to the car.
       if (userLocation) {
         const car: [number, number] = [userLocation.longitude, userLocation.latitude];
-        const carVisible = map.current.getBounds().contains(car);
+        const carVisible = map.current.getBounds()?.contains(car) ?? false;
         const nearestMeters = Math.min(...places.map((p) => haversine(car[1], car[0], p.lat, p.lon)));
         if (carVisible && nearestMeters <= KEEP_DRIVER_IN_VIEW_METERS) bounds.extend(car);
       }
