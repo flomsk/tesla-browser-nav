@@ -107,6 +107,9 @@ export function useGeolocation(enableHighAccuracy = true) {
   // Minimum speed (m/s) to consider for heading calculation (~5 km/h)
   const MIN_SPEED_FOR_HEADING = 1.4;
 
+  // Worst GPS accuracy (m) at which a speed derived from position jumps is still trustworthy
+  const MAX_ACCURACY_FOR_SPEED = 50;
+
   const updatePosition = useCallback((position: GeolocationPosition) => {
     const { latitude, longitude, heading: geoHeading, speed, accuracy } = position.coords;
     const timestamp = position.timestamp;
@@ -114,8 +117,9 @@ export function useGeolocation(enableHighAccuracy = true) {
     let effectiveSpeed = speed !== null && Number.isFinite(speed) && speed >= 0 ? speed : null;
 
     // Tesla/browser GPS implementations do not always populate coords.speed.
-    // Fall back to distance over time while filtering stationary GPS drift.
-    if (effectiveSpeed === null && previousPosition) {
+    // Fall back to distance over time while filtering stationary GPS drift. Skipped when the fix is
+    // coarse (a laptop's Wi-Fi position jumps by hundreds of metres, which is not driving).
+    if (effectiveSpeed === null && previousPosition && Math.max(accuracy, previousPosition.accuracy) <= MAX_ACCURACY_FOR_SPEED) {
       const distance = calculateDistance(
         previousPosition.lat,
         previousPosition.lon,

@@ -153,7 +153,13 @@ export function NavigateSearch({
       }
       const data = await response.json();
       if (requestId !== requestIdRef.current) return; // a newer search started meanwhile
-      showResults(response.ok ? data.places ?? [] : []);
+      let found: Place[] = response.ok ? data.places ?? [] : [];
+      if (!("category" in request)) {
+        // The geocoder measures from the point it biases towards (the map centre); show how far the
+        // car is from each result instead
+        found = found.map((p) => ({ ...p, distance: haversine(near[1], near[0], p.lat, p.lon) }));
+      }
+      showResults(found);
       setSearched(true);
     } catch {
       if (requestId === requestIdRef.current) {
