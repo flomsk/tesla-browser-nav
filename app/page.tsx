@@ -34,6 +34,8 @@ import {
 } from "@/lib/navLanguage";
 import type { NavLanguage } from "@/lib/navLanguage";
 import { isSpeechSupported, speak, unlockAudio } from "@/lib/voice";
+import { uiText } from "@/lib/uiText";
+import type { UiText } from "@/lib/uiText";
 import {
   DEFAULT_UNIT_SYSTEM,
   UNIT_SYSTEM_STORAGE_KEY,
@@ -60,14 +62,14 @@ const getContainerStyles = (darkMode: boolean) =>
     : "bg-white/50 text-black border-black/10";
 
 // Format duration in seconds to human-readable string
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number, ui: UiText): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
   
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return `${hours} ${ui.hourShort} ${minutes} ${ui.minuteShort}`;
   }
-  return `${minutes} min`;
+  return `${minutes} ${ui.min}`;
 }
 
 // Ask "still there?" when passing within this distance of a police report
@@ -164,6 +166,7 @@ export default function Home() {
     return defaultNavLanguage();
   });
   const speechLang = speechLangFor(navLanguage);
+  const ui = uiText(navLanguage);
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("tbn-voice") !== "false";
@@ -971,14 +974,20 @@ export default function Home() {
     };
   }, []);
 
-  const flashReportStatus = useCallback((message: string) => {
+  // Say the question out loud: the driver shouldn't have to read the card
+  useEffect(() => {
+    if (confirmPrompt && voiceEnabled) speak(ui.policeStillThere, speechLang);
+  }, [confirmPrompt, voiceEnabled, speechLang, ui]);
+
+  const flashReportStatus = useCallback((message: string, spoken = false) => {
     setReportStatus(message);
     setTimeout(() => setReportStatus(null), 3000);
-  }, []);
+    if (spoken && voiceEnabled) speak(message, speechLang);
+  }, [voiceEnabled, speechLang]);
 
   const handleReportPolice = useCallback(async () => {
     if (!latitude || !longitude) {
-      flashReportStatus("No GPS position yet");
+      flashReportStatus(ui.noGps);
       return;
     }
     const id = await reportPolice(latitude, longitude);
@@ -986,20 +995,20 @@ export default function Home() {
       ownReportIdsRef.current.add(id);
       // Don't alert ourselves about our own report
       alertedPoliceIdsRef.current.add(id);
-      flashReportStatus("Police reported");
+      flashReportStatus(ui.policeReported, true);
       posthog.capture("police_reported");
     } else {
-      flashReportStatus("Report failed — offline?");
+      flashReportStatus(ui.reportFailed);
     }
-  }, [latitude, longitude, reportPolice, flashReportStatus]);
+  }, [latitude, longitude, reportPolice, flashReportStatus, ui]);
 
   const handleConfirmVote = useCallback(async (vote: "up" | "down") => {
     if (!confirmPrompt) return;
     if (confirmPromptTimerRef.current) clearTimeout(confirmPromptTimerRef.current);
     setConfirmPrompt(null);
     const ok = await voteOnReport(confirmPrompt.id, vote);
-    flashReportStatus(ok ? "Thanks!" : "Vote failed — offline?");
-  }, [confirmPrompt, voteOnReport, flashReportStatus]);
+    flashReportStatus(ok ? ui.thanks : ui.voteFailed);
+  }, [confirmPrompt, voteOnReport, flashReportStatus, ui]);
 
   // Listen for system dark mode preference changes
   // Only update if user hasn't explicitly set a preference
@@ -1236,13 +1245,13 @@ export default function Home() {
               {/* Location info */}
               <div className="px-5 py-4 border-b border-inherit">
                 <div className={`text-xs uppercase tracking-wider mb-1 ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Selected Location
+                  {ui.selectedLocation}
                 </div>
                 <div className="text-sm font-medium">
                   {contextMenuLoading ? (
                     <span className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin opacity-50" />
-                      Finding address...
+                      {ui.findingAddress}
                     </span>
                   ) : (
                     contextMenu.placeName || `${contextMenu.lat.toFixed(4)}, ${contextMenu.lng.toFixed(4)}`
@@ -1261,7 +1270,7 @@ export default function Home() {
                   `}
                 >
                   <NavigateToIcon className={`w-5 h-5 ${effectiveDarkMode ? "text-blue-400" : "text-blue-500"}`} />
-                  <span className="font-medium">Select location</span>
+                  <span className="font-medium">{ui.selectLocation}</span>
                 </button>
                 <button
                   onClick={handleCloseContextMenu}
@@ -1272,7 +1281,7 @@ export default function Home() {
                   `}
                 >
                   <CloseNavIcon className="w-5 h-5" />
-                  <span className="font-medium">Cancel</span>
+                  <span className="font-medium">{ui.cancel}</span>
                 </button>
               </div>
             </div>
@@ -1291,6 +1300,7 @@ export default function Home() {
             onEnd={handleClearDestination}
             units={units}
             isDarkMode={effectiveDarkMode}
+            language={navLanguage}
           />
         )}
 
@@ -1298,6 +1308,7 @@ export default function Home() {
           <FasterRouteCard
             offer={fasterRoute}
             units={units}
+            language={navLanguage}
             onAccept={handleTakeFasterRoute}
             onDismiss={dismissFasterRoute}
           />
@@ -1330,7 +1341,7 @@ export default function Home() {
               <LocationSearchIcon className={`w-5 h-5 flex-shrink-0 ${effectiveDarkMode ? "text-blue-400" : "text-blue-500"}`} />
               <div className="flex-1 min-w-0">
                 <div className={`text-xs uppercase tracking-wider ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Search Result
+                  {ui.searchResult}
                 </div>
                 <div className="text-sm font-medium truncate">{previewLocation.name}</div>
               </div>
@@ -1345,6 +1356,7 @@ export default function Home() {
                   onSelectRoute={setSelectedRouteIndex}
                   isDarkMode={effectiveDarkMode}
                   units={units}
+                  language={navLanguage}
                 />
               </div>
             )}
@@ -1354,7 +1366,7 @@ export default function Home() {
               <div className="flex items-center gap-2 px-4 py-3 border-b border-inherit">
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin opacity-50" />
                 <span className={`text-sm ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Finding routes...
+                  {ui.findingRoutes}
                 </span>
               </div>
             )}
@@ -1372,7 +1384,7 @@ export default function Home() {
                 `}
               >
                 <NavigateToIcon className="w-4 h-4" />
-                {routes.length > 1 ? "Start Selected Route" : "Navigate"}
+                {routes.length > 1 ? ui.startSelectedRoute : ui.navigate}
               </button>
               <button
                 onClick={handleCancelPreview}
@@ -1382,7 +1394,7 @@ export default function Home() {
                   transition-all active:scale-[0.98]
                 `}
               >
-                Cancel
+                {ui.cancel}
               </button>
             </div>
           </div>
@@ -1403,7 +1415,7 @@ export default function Home() {
                 <div className="flex items-center gap-2">
                   <ClockIcon className={`w-5 h-5 ${effectiveDarkMode ? "text-blue-400" : "text-blue-500"}`} />
                   <span className="text-lg font-semibold">
-                    {formatDuration(route.duration)}
+                    {formatDuration(route.duration, ui)}
                   </span>
                 </div>
                 <div className={`text-sm ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -1415,7 +1427,7 @@ export default function Home() {
               <div className="flex items-center gap-2 px-4 py-3 border-b border-inherit">
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin opacity-50" />
                 <span className={`text-sm ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Calculating route...
+                  {ui.calculatingRoute}
                 </span>
               </div>
             )}
@@ -1425,7 +1437,7 @@ export default function Home() {
               <NavigateToIcon className={`w-5 h-5 flex-shrink-0 ${effectiveDarkMode ? "text-blue-400" : "text-blue-500"}`} />
               <div className="flex-1 min-w-0">
                 <div className={`text-xs uppercase tracking-wider ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  Navigating to
+                  {ui.navigatingTo}
                 </div>
                 <div className="text-sm font-medium truncate">{destination.name}</div>
               </div>
@@ -1435,7 +1447,7 @@ export default function Home() {
                   p-2 rounded-lg transition-colors
                   ${effectiveDarkMode ? "hover:bg-white/10" : "hover:bg-black/5"}
                 `}
-                aria-label="Clear destination"
+                aria-label={ui.clearDestination}
               >
                 <CloseNavIcon className="w-5 h-5 opacity-60" />
               </button>
@@ -1454,7 +1466,7 @@ export default function Home() {
             ${getButtonStyles(effectiveDarkMode)}
             shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
           `}
-          aria-label={followMode ? "Lock north up" : "Follow heading"}
+          aria-label={followMode ? ui.lockNorthUp : ui.followHeading}
         >
           <div className="relative w-11 h-11">
             {/* Compass icon */}
@@ -1524,7 +1536,7 @@ export default function Home() {
             {/* Show placeholder when loading with no alerts yet */}
             {alertsLoading && filteredAlerts.length === 0 && (
               <span className={`text-xs ${effectiveDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Loading...
+                {ui.loading}
               </span>
             )}
           </div>
@@ -1534,7 +1546,7 @@ export default function Home() {
       {/* Top Center - Speed camera and road incident warnings */}
       {(cameraWarning || roadEventWarning || jamWarning) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3">
-          {cameraWarning && <CameraWarningBanner warning={cameraWarning} units={units} />}
+          {cameraWarning && <CameraWarningBanner warning={cameraWarning} units={units} language={navLanguage} />}
           {roadEventWarning && <RoadEventBanner warning={roadEventWarning} units={units} language={navLanguage} />}
           {jamWarning && <TrafficJamBanner warning={jamWarning} units={units} language={navLanguage} />}
         </div>
@@ -1547,6 +1559,7 @@ export default function Home() {
           speedLimitKmh={currentSpeedLimitKmh}
           units={units}
           isDarkMode={effectiveDarkMode}
+          language={navLanguage}
         />
       </div>
 
@@ -1564,7 +1577,7 @@ export default function Home() {
             ${getButtonStyles(effectiveDarkMode)}
             shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
           `}
-          aria-label="Settings"
+          aria-label={ui.settings}
         >
           <SettingsIcon className="w-7 h-7" />
         </button>
@@ -1573,10 +1586,10 @@ export default function Home() {
         <button
           onClick={handleReportPolice}
           className="px-5 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center gap-2 bg-blue-600/85 text-white border-blue-400/30 shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95"
-          aria-label="Report police here"
+          aria-label={ui.reportPoliceHere}
         >
           <PoliceAlertIcon className="w-7 h-7" />
-          <span className="text-base font-bold">Police</span>
+          <span className="text-base font-bold">{ui.police}</span>
         </button>
 
         {/* Voice mute toggle */}
@@ -1587,7 +1600,7 @@ export default function Home() {
             ${getButtonStyles(effectiveDarkMode)}
             shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
           `}
-          aria-label={voiceEnabled ? "Mute voice guidance" : "Unmute voice guidance"}
+          aria-label={voiceEnabled ? ui.muteVoice : ui.unmuteVoice}
           aria-pressed={voiceEnabled}
         >
           <span className="text-3xl leading-none">{voiceEnabled ? "🔊" : "🔇"}</span>
@@ -1615,18 +1628,18 @@ export default function Home() {
             `}
           >
             <PoliceAlertIcon className="w-8 h-8 text-blue-500" />
-            <span className="text-lg font-semibold">Police still there?</span>
+            <span className="text-lg font-semibold">{ui.policeStillThere}</span>
             <button
               onClick={() => handleConfirmVote("up")}
               className="h-14 px-6 rounded-xl bg-blue-600 text-white text-lg font-bold active:scale-95 transition-transform"
             >
-              Yes
+              {ui.yes}
             </button>
             <button
               onClick={() => handleConfirmVote("down")}
               className="h-14 px-6 rounded-xl bg-gray-500/80 text-white text-lg font-bold active:scale-95 transition-transform"
             >
-              Not there
+              {ui.notThere}
             </button>
           </div>
         </div>
@@ -1662,17 +1675,17 @@ export default function Home() {
               setTimeout(() => setPoliceAlertToast(null), 5000);
             }}
             className="px-4 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center gap-2 bg-blue-500/80 text-white border-blue-400/30 shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95"
-            aria-label="Test police alert"
+            aria-label={ui.testPoliceAlert}
           >
             <PoliceAlertIcon className="w-5 h-5" />
-            <span className="text-sm font-bold">Test Alert</span>
+            <span className="text-sm font-bold">{ui.testAlert}</span>
           </button>
         )}
 
         {/* Dev Mode Badge */}
         {isDevMode && !route && (
           <div className="px-4 h-16 rounded-xl backdrop-blur-xl flex items-center justify-center bg-purple-500/80 text-white border-purple-400/30 shadow-lg border">
-            <span className="text-sm font-bold uppercase tracking-wider">Dev Mode</span>
+            <span className="text-sm font-bold uppercase tracking-wider">{ui.devMode}</span>
           </div>
         )}
 
@@ -1688,17 +1701,17 @@ export default function Home() {
               }
               shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
             `}
-            aria-label={isSimulating ? "Stop simulation" : "Start simulation"}
+            aria-label={isSimulating ? ui.stopSimulation : ui.startSimulation}
           >
             {isSimulating ? (
               <>
                 <StopIcon className="w-6 h-6" />
-                <span className="text-lg font-medium">Stop</span>
+                <span className="text-lg font-medium">{ui.stop}</span>
               </>
             ) : (
               <>
                 <PlayIcon className="w-6 h-6" />
-                <span className="text-lg font-medium">Simulate</span>
+                <span className="text-lg font-medium">{ui.simulate}</span>
               </>
             )}
           </button>
@@ -1713,10 +1726,10 @@ export default function Home() {
               bg-blue-500/80 text-white border-blue-400/30
               shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
             `}
-            aria-label="Recenter on location"
+            aria-label={ui.recenterOnLocation}
           >
             <CrosshairIcon className="w-6 h-6" />
-            <span className="text-lg font-medium">Recenter</span>
+            <span className="text-lg font-medium">{ui.recenter}</span>
           </button>
         )}
 
@@ -1728,7 +1741,7 @@ export default function Home() {
             ${getButtonStyles(effectiveDarkMode)}
             shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
           `}
-          aria-label="Zoom out"
+          aria-label={ui.zoomOut}
         >
           <MinusIcon className="w-7 h-7" />
         </button>
@@ -1741,7 +1754,7 @@ export default function Home() {
             ${getButtonStyles(effectiveDarkMode)}
             shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
           `}
-          aria-label="Zoom in"
+          aria-label={ui.zoomIn}
         >
           <PlusIcon className="w-7 h-7" />
         </button>
@@ -1755,7 +1768,7 @@ export default function Home() {
               ${getButtonStyles(effectiveDarkMode)}
               shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95
             `}
-            aria-label="Toggle dark mode"
+            aria-label={ui.toggleDarkMode}
           >
             {isDarkMode ? (
               <SunIcon className="w-7 h-7" />
@@ -1802,7 +1815,7 @@ export default function Home() {
             <div className="bg-black/90 backdrop-blur-md text-white px-12 py-6 rounded-b-3xl shadow-2xl border-b border-l border-r border-white/20">
               <div className="flex items-center gap-4">
                 <PoliceAlertIcon className="w-12 h-12 police-icon" />
-                <span className="text-4xl font-bold tracking-wide">POLICE AHEAD</span>
+                <span className="text-4xl font-bold tracking-wide">{ui.policeAhead}</span>
               </div>
             </div>
           </div>

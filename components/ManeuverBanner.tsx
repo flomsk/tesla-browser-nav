@@ -4,6 +4,8 @@ import { maneuverArrow } from "@/lib/navigation";
 import { formatDistance, formatShortDistance } from "@/lib/units";
 import type { RouteProgress } from "@/lib/navigation";
 import type { UnitSystem } from "@/lib/units";
+import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 
 interface ManeuverBannerProps {
   progress: RouteProgress;
@@ -11,6 +13,7 @@ interface ManeuverBannerProps {
   onEnd: () => void;
   units: UnitSystem;
   isDarkMode: boolean;
+  language: NavLanguage;
 }
 
 function formatArrivalTime(secondsFromNow: number): string {
@@ -20,7 +23,8 @@ function formatArrivalTime(secondsFromNow: number): string {
 
 // Large, glanceable next-maneuver card for the car screen. Also the only trip card while
 // navigating: remaining distance, ETA, destination and the button to end the route.
-export function ManeuverBanner({ progress, destinationName, onEnd, units, isDarkMode }: ManeuverBannerProps) {
+export function ManeuverBanner({ progress, destinationName, onEnd, units, isDarkMode, language }: ManeuverBannerProps) {
+  const ui = uiText(language);
   const step = progress.nextStep;
   if (!step) return null;
 
@@ -47,14 +51,14 @@ export function ManeuverBanner({ progress, destinationName, onEnd, units, isDark
       </div>
       <div className="flex items-center gap-3 pl-5 pr-2 py-1.5 bg-black/25 text-base font-semibold tabular-nums">
         <span>{formatDistance(progress.remainingDistance, units)}</span>
-        <span>ETA {formatArrivalTime(progress.remainingDuration)}</span>
+        <span>{ui.eta} {formatArrivalTime(progress.remainingDuration)}</span>
         <span className="flex-1 min-w-0 truncate text-sm font-medium text-white/75">{destinationName}</span>
         <button
           onClick={onEnd}
           className="h-11 px-4 rounded-lg bg-white/15 text-sm font-bold active:bg-white/30"
-          aria-label="End route"
+          aria-label={ui.endRoute}
         >
-          End
+          {ui.end}
         </button>
       </div>
     </div>

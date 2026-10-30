@@ -5,6 +5,7 @@ import { formatShortDistance } from "@/lib/units";
 import type { JamWarning } from "@/lib/traffic";
 import type { NavLanguage } from "@/lib/navLanguage";
 import type { UnitSystem } from "@/lib/units";
+import { uiText } from "@/lib/uiText";
 
 interface TrafficJamBannerProps {
   warning: JamWarning;
@@ -30,7 +31,7 @@ export function TrafficJamBanner({ warning, units, language }: TrafficJamBannerP
           {formatShortDistance(warning.distance, units)}
         </span>
         <span className="text-base font-semibold leading-tight tabular-nums">
-          {phrases(language).jamLabel} · {formatShortDistance(jam.endAlong - jam.startAlong, units)} · +{minutes} min
+          {phrases(language).jamLabel} · {formatShortDistance(jam.endAlong - jam.startAlong, units)} · +{minutes} {uiText(language).min}
         </span>
       </div>
     </div>

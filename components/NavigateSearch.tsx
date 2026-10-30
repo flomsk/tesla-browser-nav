@@ -8,6 +8,7 @@ import { haversine } from "@/lib/navigation";
 import { formatDistance } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
 import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 import type { FuelType, Place, PlaceCategory } from "@/types/poi";
 
 interface NavigateSearchProps {
@@ -53,6 +54,7 @@ export function NavigateSearch({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const requestIdRef = useRef(0);
   const alongRoute = routeAhead !== null && routeAhead.length >= 2;
+  const ui = uiText(language);
 
   const showResults = useCallback((places: Place[]) => {
     setResults(places);
@@ -216,7 +218,7 @@ export function NavigateSearch({
         `}
       >
         <SearchIcon className="w-6 h-6 opacity-70" />
-        <span className="text-lg font-medium">{alongRoute ? "Along the route" : "Where to?"}</span>
+        <span className="text-lg font-medium">{alongRoute ? ui.alongTheRoute : ui.whereTo}</span>
       </button>
     );
   }
@@ -238,11 +240,11 @@ export function NavigateSearch({
             if (e.key === "Enter" && results[0]) handleSelect(results[0]);
             if (e.key === "Escape") close();
           }}
-          placeholder={alongRoute ? "Search along the route" : "Address, place or “supercharger”"}
+          placeholder={alongRoute ? ui.searchAlongPlaceholder : ui.searchPlaceholder}
           className={`flex-1 min-w-0 bg-transparent text-lg font-medium outline-none ${isDarkMode ? "placeholder:text-gray-500" : "placeholder:text-gray-400"}`}
         />
         {loading && <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin opacity-50" />}
-        <button onClick={close} className="p-2 -mr-2 opacity-60" aria-label="Close search">
+        <button onClick={close} className="p-2 -mr-2 opacity-60" aria-label={ui.closeSearch}>
           <CloseIcon className="w-6 h-6" />
         </button>
       </div>
@@ -259,7 +261,7 @@ export function NavigateSearch({
             `}
           >
             <span aria-hidden>{c.icon}</span>
-            {c.label}
+            {ui.categories[c.code]}
           </button>
         ))}
       </div>
@@ -281,7 +283,7 @@ export function NavigateSearch({
 
       {searched && !loading && results.length === 0 && (
         <div className={`px-5 py-4 text-base border-t ${subtext} ${divider}`}>
-          {alongRoute && activeCategory ? "Nothing found along the route" : "Nothing found"}
+          {alongRoute && activeCategory ? ui.nothingFoundAlong : ui.nothingFound}
         </div>
       )}
     </div>

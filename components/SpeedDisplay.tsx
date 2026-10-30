@@ -2,18 +2,22 @@
 
 import { limitInUnits, speedInUnits } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
+import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 
 interface SpeedDisplayProps {
   speedMetersPerSecond: number | null;
   speedLimitKmh: number | null;
   units: UnitSystem;
   isDarkMode: boolean;
+  language: NavLanguage;
 }
 
 // Tolerance before flagging as speeding (GPS speed is a little noisy)
 const SPEEDING_TOLERANCE_KMH = 3;
 
-export function SpeedDisplay({ speedMetersPerSecond, speedLimitKmh, units, isDarkMode }: SpeedDisplayProps) {
+export function SpeedDisplay({ speedMetersPerSecond, speedLimitKmh, units, isDarkMode, language }: SpeedDisplayProps) {
+  const ui = uiText(language);
   const currentSpeed = speedMetersPerSecond === null ? null : Math.max(0, speedInUnits(speedMetersPerSecond, units));
   const isSpeeding =
     speedMetersPerSecond !== null &&
@@ -21,7 +25,7 @@ export function SpeedDisplay({ speedMetersPerSecond, speedLimitKmh, units, isDar
     speedMetersPerSecond * 3.6 > speedLimitKmh + SPEEDING_TOLERANCE_KMH;
 
   return (
-    <div className="flex items-end gap-2" aria-label="Driving speed">
+    <div className="flex items-end gap-2" aria-label={ui.drivingSpeed}>
       <div
         className={`
           flex h-[96px] w-[96px] flex-col items-center justify-center rounded-2xl border backdrop-blur-xl shadow-lg transition-colors
@@ -41,7 +45,7 @@ export function SpeedDisplay({ speedMetersPerSecond, speedLimitKmh, units, isDar
       {speedLimitKmh !== null && (
         <div
           className="flex h-[80px] w-[80px] items-center justify-center rounded-full border-[7px] border-red-500 bg-white text-black shadow-lg"
-          aria-label={`Speed limit ${limitInUnits(speedLimitKmh, units)}`}
+          aria-label={ui.speedLimit(String(limitInUnits(speedLimitKmh, units)))}
         >
           <span className="text-3xl font-black tabular-nums leading-none">{limitInUnits(speedLimitKmh, units)}</span>
         </div>

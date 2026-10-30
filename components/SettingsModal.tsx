@@ -8,6 +8,7 @@ import { policeAlertDistanceOptions } from "@/lib/units";
 import { NAV_LANGUAGES } from "@/lib/navLanguage";
 import type { UnitSystem } from "@/lib/units";
 import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 import { FUEL_TYPES } from "@/lib/places";
 import type { FuelType } from "@/types/poi";
 
@@ -76,6 +77,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
+  const ui = uiText(navLanguage);
 
   useEffect(() => {
     if (isOpen) {
@@ -132,7 +134,7 @@ export function SettingsModal({
           flex items-center justify-between px-6 py-5 border-b
           ${isDarkMode ? "border-white/10" : "border-black/10"}
         `}>
-          <h2 className="text-2xl font-semibold">Settings</h2>
+          <h2 className="text-2xl font-semibold">{ui.settings}</h2>
           <button
             onClick={() => {
               onClose();
@@ -144,7 +146,7 @@ export function SettingsModal({
               ${isDarkMode ? "hover:bg-white/10" : "hover:bg-black/5"}
               transition-colors
             `}
-            aria-label="Close settings"
+            aria-label={ui.closeSettings}
           >
             <CloseIcon className="w-7 h-7" />
           </button>
@@ -156,7 +158,7 @@ export function SettingsModal({
             {/* Map Style Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Map Style
+                {ui.mapStyle}
               </h3>
               
               <div className="space-y-4">
@@ -168,13 +170,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <span className="text-3xl">🛰️</span>
                     <div>
-                      <div className="text-lg font-medium">Satellite View</div>
+                      <div className="text-lg font-medium">{ui.satelliteView}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Use satellite imagery instead of standard map
+                        {ui.satelliteHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={useSatellite}
                     onToggle={(value) => {
                       onToggleSatellite(value);
@@ -192,7 +195,7 @@ export function SettingsModal({
             {/* Map Layers Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Map Layers
+                {ui.mapLayers}
               </h3>
               
               <div className="space-y-4">
@@ -204,13 +207,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <ShieldExclamationIcon className="w-8 h-8 text-blue-500" />
                     <div>
-                      <div className="text-lg font-medium">Police Reports</div>
+                      <div className="text-lg font-medium">{ui.policeReports}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Police reported by drivers
+                        {ui.policeReportsHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={showWazeAlerts}
                     onToggle={(value) => {
                       onToggleWazeAlerts(value);
@@ -231,13 +235,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <span className="text-3xl">📷</span>
                     <div>
-                      <div className="text-lg font-medium">Speed Cameras</div>
+                      <div className="text-lg font-medium">{ui.speedCameras}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Speed, average-speed and red light cameras (DGT, Catalonia, OpenStreetMap)
+                        {ui.speedCamerasHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={showSpeedCameras}
                     onToggle={(value) => {
                       onToggleSpeedCameras(value);
@@ -258,9 +263,9 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <span className="text-3xl">⛽</span>
                     <div>
-                      <div className="text-lg font-medium">Fuel for price search</div>
+                      <div className="text-lg font-medium">{ui.fuelForSearch}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Prices shown when you search for fuel (Spain)
+                        {ui.fuelForSearchHint}
                       </div>
                     </div>
                   </div>
@@ -290,13 +295,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <MapIcon className="w-8 h-8 text-orange-500" />
                     <div>
-                      <div className="text-lg font-medium">Traffic Layer</div>
+                      <div className="text-lg font-medium">{ui.trafficLayer}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Show real-time traffic congestion
+                        {ui.trafficLayerHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={showTraffic}
                     onToggle={(value) => {
                       onToggleTraffic(value);
@@ -314,15 +320,15 @@ export function SettingsModal({
             {/* Units Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Units
+                {ui.units}
               </h3>
               <div className={`
                 p-5 rounded-xl flex gap-2
                 ${isDarkMode ? "bg-white/5" : "bg-black/5"}
               `}>
                 {([
-                  { value: "metric", label: "Kilometers · km/h" },
-                  { value: "imperial", label: "Miles · mph" },
+                  { value: "metric", label: ui.unitsMetric },
+                  { value: "imperial", label: ui.unitsImperial },
                 ] as const).map((option) => (
                   <button
                     key={option.value}
@@ -346,7 +352,7 @@ export function SettingsModal({
             {/* Voice Guidance Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Voice &amp; Directions
+                {ui.voiceAndDirections}
               </h3>
               <div className={`
                 p-5 rounded-xl flex flex-wrap gap-2
@@ -382,7 +388,7 @@ export function SettingsModal({
                     }
                   `}
                 >
-                  {voiceEnabled ? "🔊 Voice on" : "🔇 Voice off"}
+                  {voiceEnabled ? ui.voiceOn : ui.voiceOff}
                 </button>
               </div>
             </div>
@@ -390,7 +396,7 @@ export function SettingsModal({
             {/* Police Alerts Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Police Alerts
+                {ui.policeAlerts}
               </h3>
               
               <div className="space-y-4">
@@ -402,9 +408,9 @@ export function SettingsModal({
                   <div className="flex items-center gap-4 mb-4">
                     <ShieldExclamationIcon className="w-8 h-8 text-blue-500" />
                     <div>
-                      <div className="text-lg font-medium">Alert Distance</div>
+                      <div className="text-lg font-medium">{ui.alertDistance}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Get notified when police are within this distance
+                        {ui.alertDistanceHint}
                       </div>
                     </div>
                   </div>
@@ -428,7 +434,7 @@ export function SettingsModal({
                           }
                         `}
                       >
-                        {option.label}
+                        {option.value === 0 ? ui.off : option.label}
                       </button>
                     ))}
                   </div>
@@ -443,13 +449,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <span className="text-3xl">🔊</span>
                     <div>
-                      <div className="text-lg font-medium">Sound Alert</div>
+                      <div className="text-lg font-medium">{ui.soundAlert}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Play audio when police are nearby
+                        {ui.soundAlertHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={policeAlertSound}
                     onToggle={(value) => {
                       onTogglePoliceAlertSound(value);
@@ -466,7 +473,7 @@ export function SettingsModal({
             {/* Appearance Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Appearance
+                {ui.appearance}
               </h3>
               
               <div className="space-y-4">
@@ -478,13 +485,14 @@ export function SettingsModal({
                   <div className="flex items-center gap-4">
                     <span className="text-3xl">💫</span>
                     <div>
-                      <div className="text-lg font-medium">Location Pulse</div>
+                      <div className="text-lg font-medium">{ui.locationPulse}</div>
                       <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        Animated pulse around your avatar
+                        {ui.locationPulseHint}
                       </div>
                     </div>
                   </div>
                   <Toggle
+                    language={navLanguage}
                     enabled={showAvatarPulse}
                     onToggle={(value) => {
                       onToggleAvatarPulse(value);
@@ -503,7 +511,7 @@ export function SettingsModal({
             {/* Experimental Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Experimental
+                {ui.experimental}
               </h3>
               
               <div className="space-y-4">
@@ -516,13 +524,14 @@ export function SettingsModal({
                     <div className="flex items-center gap-4">
                       <span className="text-3xl">🏔️</span>
                       <div>
-                        <div className="text-lg font-medium">3D Map View</div>
+                        <div className="text-lg font-medium">{ui.map3d}</div>
                         <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                          Show terrain elevation with tilted camera
+                          {ui.map3dHint}
                         </div>
                       </div>
                     </div>
                     <Toggle
+                    language={navLanguage}
                       enabled={use3DMode}
                       onToggle={(value) => {
                         onToggle3DMode(value);
@@ -537,7 +546,7 @@ export function SettingsModal({
                     mt-4 p-3 rounded-lg text-sm
                     ${isDarkMode ? "bg-amber-500/10 text-amber-200" : "bg-amber-50 text-amber-700"}
                   `}>
-                    <span className="font-medium">Note:</span> 3D mode may not work on older Tesla browsers. Enabling this will also activate follow mode for the best experience.
+                    <span className="font-medium">{ui.note}</span> {ui.map3dNote}
                   </div>
                 </div>
               </div>
@@ -546,7 +555,7 @@ export function SettingsModal({
             {/* About Section */}
             <div>
               <h3 className={`text-base font-medium uppercase tracking-wider mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                About
+                {ui.about}
               </h3>
               <div className={`
                 p-5 rounded-xl
@@ -570,12 +579,15 @@ export function SettingsModal({
 function Toggle({ 
   enabled, 
   onToggle,
-  isDarkMode 
+  isDarkMode,
+  language,
 }: { 
   enabled: boolean; 
   onToggle: (value: boolean) => void;
   isDarkMode: boolean;
+  language: NavLanguage;
 }) {
+  const ui = uiText(language);
   return (
     <button
       onClick={() => onToggle(!enabled)}
@@ -586,7 +598,7 @@ function Toggle({
           : isDarkMode ? "bg-white/20" : "bg-black/20"
         }
       `}
-      aria-label={enabled ? "Disable" : "Enable"}
+      aria-label={enabled ? ui.disable : ui.enable}
     >
       <div
         className={`

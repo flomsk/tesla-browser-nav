@@ -2,6 +2,7 @@
 
 import { NAV_LANGUAGES } from "@/lib/navLanguage";
 import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 
 interface StartTripScreenProps {
   language: NavLanguage;
@@ -20,6 +21,7 @@ export function StartTripScreen({
   onToggleVoice,
   onStart,
 }: StartTripScreenProps) {
+  const ui = uiText(language);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md">
       <div className="flex flex-col items-center gap-8 px-6">
@@ -28,7 +30,7 @@ export function StartTripScreen({
           className="flex h-40 w-[min(520px,90vw)] items-center justify-center gap-4 rounded-3xl bg-blue-600 text-4xl font-bold text-white shadow-2xl transition-transform active:scale-95"
         >
           <span aria-hidden>▶</span>
-          Start driving
+          {ui.startDriving}
         </button>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -52,12 +54,12 @@ export function StartTripScreen({
             `}
             aria-pressed={voiceEnabled}
           >
-            {voiceEnabled ? "🔊 Voice on" : "🔇 Voice off"}
+            {voiceEnabled ? ui.voiceOn : ui.voiceOff}
           </button>
         </div>
 
         <p className="max-w-md text-center text-base text-white/70">
-          Tap once so the browser can play voice guidance and camera warnings through the car speakers.
+          {ui.startHint}
         </p>
       </div>
     </div>

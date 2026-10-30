@@ -3,19 +3,22 @@
 import { formatShortDistance, limitInUnits } from "@/lib/units";
 import type { CameraWarning } from "@/hooks/useCameraAlerts";
 import type { UnitSystem } from "@/lib/units";
+import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
 
 interface CameraWarningBannerProps {
   warning: CameraWarning;
   units: UnitSystem;
+  language: NavLanguage;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  speed_camera: "Speed camera",
-  red_light_camera: "Red light camera",
-  average_speed_camera: "Average speed section",
-};
-
-export function CameraWarningBanner({ warning, units }: CameraWarningBannerProps) {
+export function CameraWarningBanner({ warning, units, language }: CameraWarningBannerProps) {
+  const ui = uiText(language);
+  const typeLabels: Record<string, string> = {
+    speed_camera: ui.speedCamera,
+    red_light_camera: ui.redLightCamera,
+    average_speed_camera: ui.averageSpeedCamera,
+  };
   return (
     <div
       className="flex items-center gap-4 pl-4 pr-5 py-3 rounded-2xl shadow-2xl border border-red-300/40 bg-red-600/95 text-white"
@@ -27,7 +30,7 @@ export function CameraWarningBanner({ warning, units }: CameraWarningBannerProps
           {formatShortDistance(warning.distance, units)}
         </span>
         <span className="text-base font-semibold leading-tight">
-          {TYPE_LABELS[warning.camera.type] ?? "Camera"}
+          {typeLabels[warning.camera.type] ?? ui.camera}
           {warning.camera.ref ? ` · ${warning.camera.ref}` : ""}
         </span>
       </div>

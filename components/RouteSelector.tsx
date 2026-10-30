@@ -2,6 +2,9 @@
 
 import { formatDistance } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
+import type { NavLanguage } from "@/lib/navLanguage";
+import { uiText } from "@/lib/uiText";
+import type { UiText } from "@/lib/uiText";
 import type { RouteData } from "@/types/route";
 
 interface RouteSelectorProps {
@@ -10,23 +13,24 @@ interface RouteSelectorProps {
   onSelectRoute: (index: number) => void;
   isDarkMode?: boolean;
   units: UnitSystem;
+  language: NavLanguage;
 }
 
 // Format duration in seconds to human-readable string
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number, ui: UiText): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
   
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return `${hours} ${ui.hourShort} ${minutes} ${ui.minuteShort}`;
   }
-  return `${minutes} min`;
+  return `${minutes} ${ui.min}`;
 }
 
 // Get label for route (Fastest, Alternative, etc.)
-function getRouteLabel(index: number, routes: RouteData[]): string {
+function getRouteLabel(index: number, routes: RouteData[], ui: UiText): string {
   if (index === 0) {
-    return "Fastest";
+    return ui.routeFastest;
   }
   
   // Check if this route is significantly different
@@ -35,15 +39,15 @@ function getRouteLabel(index: number, routes: RouteData[]): string {
   
   // If this route is shorter in distance but longer in time
   if (current.distance < fastest.distance && current.duration > fastest.duration) {
-    return "Shortest";
+    return ui.routeShortest;
   }
   
   // If this route avoids highways (simpler check - fewer steps often means main roads)
   if (current.steps.length < fastest.steps.length * 0.7) {
-    return "Simpler";
+    return ui.routeSimpler;
   }
   
-  return "Alternative";
+  return ui.routeAlternative;
 }
 
 export function RouteSelector({
@@ -52,14 +56,16 @@ export function RouteSelector({
   onSelectRoute,
   isDarkMode = false,
   units,
+  language,
 }: RouteSelectorProps) {
+  const ui = uiText(language);
   if (routes.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-1 px-2">
       {routes.map((route, index) => {
         const isSelected = index === selectedIndex;
-        const label = getRouteLabel(index, routes);
+        const label = getRouteLabel(index, routes, ui);
         const timeDiff = index > 0 
           ? Math.round((route.duration - routes[0].duration) / 60)
           : 0;
@@ -105,14 +111,14 @@ export function RouteSelector({
             <div className="flex-1 min-w-0 text-left">
               <div className="flex items-center gap-2">
                 <span className={`font-bold text-base ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                  {formatDuration(route.duration)}
+                  {formatDuration(route.duration, ui)}
                 </span>
                 <span className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
                   · {formatDistance(route.distance, units)}
                 </span>
                 {timeDiff > 0 && (
                   <span className={`text-xs font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-600"}`}>
-                    +{timeDiff} min
+                    +{timeDiff} {ui.min}
                   </span>
                 )}
               </div>
