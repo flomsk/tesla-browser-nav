@@ -86,6 +86,9 @@ const w = findCameraAhead(cameras, lat0, lng0, 0, 500);
 check("finds camera ahead only", w?.camera.id === "ahead" && Math.abs(w.distance - 400) < 5 && w.limitKmh === 50, w);
 check("heading east picks side camera", findCameraAhead(cameras, lat0, lng0, 90, 500)?.camera.id === "side");
 check("out of range -> none", findCameraAhead(cameras, lat0, lng0, 0, 300) === null);
+const oneWay = (heading: number) => [{ ...cam("ahead", 0.4, 0), heading }];
+check("camera for our direction warns", findCameraAhead(oneWay(10), lat0, lng0, 0, 500)?.camera.id === "ahead");
+check("camera for the opposite direction is ignored", findCameraAhead(oneWay(180), lat0, lng0, 0, 500) === null);
 check("warning distance clamps", warningDistanceFor(5) === 300 && warningDistanceFor(33) === 660 && warningDistanceFor(60) === 800 && warningDistanceFor(null) === 500);
 
 // Formatting / speech

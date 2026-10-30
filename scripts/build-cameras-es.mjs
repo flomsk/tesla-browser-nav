@@ -24,10 +24,32 @@ const DEDUP_RADIUS_METERS = 150;
 // to each other, are the same site: keep one marker
 const COLOCATED_RADIUS_METERS = 30;
 
+// A DGT camera's heading is trusted only if the road's carriageway and its PK order agree this well
+const HEADING_AGREEMENT_DEGREES = 45;
+
 // OSM cameras not edited since before this date are likely gone (agreed cut-off: 2021 or earlier)
 const OSM_STALE_BEFORE = "2022-01-01";
 
 const OUT_FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "data", "cameras-es.json");
+
+async function fetchOverpass(query) {
+  // The public Overpass server is often at capacity: back off and retry
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return JSON.parse(
+        await fetchText(OVERPASS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(query)}`,
+        })
+      );
+    } catch (error) {
+      if (attempt === 5) throw error;
+      console.warn(`[Overpass] ${error.message}, retrying`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 30000));
+    }
+  }
+}
 
 async function fetchText(url, init) {
   const response = await fetch(url, {
@@ -53,6 +75,20 @@ function distanceMeters(a, b) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function bearing(a, b) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const y = Math.sin(toRad(b.lon - a.lon)) * Math.cos(toRad(b.lat));
+  const x =
+    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lon - a.lon));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function angleDifference(a, b) {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
 }
 
 // --- DGT ---------------------------------------------------------------------
@@ -96,21 +132,105 @@ function parseDgt(xml) {
       const to = block.match(/<_0:to\b[\s\S]*?<\/_0:to>/);
       const start = from && coords(from[0]);
       const end = to && coords(to[0]);
+      // Both ends are checked in the start -> end direction of travel
+      const heading = start && end ? Math.round(bearing(start, end)) : undefined;
+      const pk = (part) => parseFloat(tag(block.match(new RegExp(`<_0:${part}>[\\s\\S]*?</_0:${part}>`))?.[0] ?? "", "referencePointDistance"));
       if (start) {
-        cameras.push({ id: `dgt-${id}-start`, type: "average_speed_camera", location: start, name: name && `${name} (inicio tramo)`, ref: road, source: "dgt" });
+        cameras.push({ id: `dgt-${id}-start`, type: "average_speed_camera", location: start, heading, name: name && `${name} (inicio tramo)`, ref: road, source: "dgt", pk: pk("referencePointPrimaryLocation") });
       }
       if (end) {
-        cameras.push({ id: `dgt-${id}-end`, type: "average_speed_camera", location: end, name: name && `${name} (fin tramo)`, ref: road, source: "dgt" });
+        cameras.push({ id: `dgt-${id}-end`, type: "average_speed_camera", location: end, heading, name: name && `${name} (fin tramo)`, ref: road, source: "dgt", pk: pk("referencePointSecondaryLocation") });
       }
     } else {
       const location = coords(block);
       if (location) {
-        cameras.push({ id: `dgt-${id}`, type: "speed_camera", location, name, ref: road, source: "dgt" });
+        cameras.push({
+          id: `dgt-${id}`, type: "speed_camera", location, name, ref: road, source: "dgt",
+          pk: parseFloat(tag(block, "referencePointDistance")),
+          // positive = the direction in which the PK (kilometre point) grows
+          pkDirection: tag(block, "directionRelative"),
+        });
       }
     }
   }
 
   return cameras;
+}
+
+// DGT only says whether a cabin checks the growing or the falling PK direction. Turn that into a
+// compass heading with two independent estimates and keep it only when they agree:
+//   - the nearest one-way carriageway (OSM) the cabin sits on;
+//   - the road's axis oriented by the nearest other DGT point on the same road with another PK.
+// Checked against OSM cameras with an explicit direction: ~97% match. Cabins without an agreed
+// heading keep warning both ways.
+async function fetchRoadsNear(cameras) {
+  const highways = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link|secondary_link";
+  const around = cameras
+    .map(({ location: { lat, lon } }) => `way(around:30,${lat},${lon})["highway"~"^(${highways})$"];`)
+    .join("");
+  const json = await fetchOverpass(`[out:json][timeout:300];(${around});out tags geom;`);
+  return (json.elements || []).filter((el) => el.type === "way" && el.geometry);
+}
+
+// Nearest road segment to a point: { distance, bearing (way direction), oneway }
+function nearestSegment(point, ways) {
+  const kx = 111320 * Math.cos((point.lat * Math.PI) / 180);
+  const ky = 110540;
+  let best = null;
+  for (const way of ways) {
+    const reversed = way.tags?.oneway === "-1";
+    const oneway = reversed || way.tags?.oneway === "yes" || /^motorway/.test(way.tags?.highway ?? "");
+    for (let i = 1; i < way.geometry.length; i++) {
+      const a = way.geometry[i - 1];
+      const b = way.geometry[i];
+      if (Math.abs(a.lat - point.lat) > 0.003 || Math.abs(a.lon - point.lon) > 0.004) continue;
+      const ax = (a.lon - point.lon) * kx, ay = (a.lat - point.lat) * ky;
+      const dx = (b.lon - a.lon) * kx, dy = (b.lat - a.lat) * ky;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+      const distance = Math.hypot(ax + t * dx, ay + t * dy);
+      if (!best || distance < best.distance) {
+        best = { distance, bearing: reversed ? bearing(b, a) : bearing(a, b), oneway };
+      }
+    }
+  }
+  return best;
+}
+
+function addDgtHeadings(dgt, ways) {
+  const byRoad = new Map();
+  for (const camera of dgt) {
+    if (!camera.ref || !Number.isFinite(camera.pk)) continue;
+    if (!byRoad.has(camera.ref)) byRoad.set(camera.ref, []);
+    byRoad.get(camera.ref).push(camera);
+  }
+
+  let found = 0;
+  for (const cabin of dgt) {
+    if (cabin.type !== "speed_camera" || !["positive", "negative"].includes(cabin.pkDirection)) continue;
+
+    const segment = nearestSegment(cabin.location, ways);
+    if (!segment || segment.distance > 40 || !segment.oneway) continue;
+
+    // Nearest point on the same road with a different PK gives the direction the PK grows
+    let reference = null;
+    for (const other of byRoad.get(cabin.ref) || []) {
+      const dPk = Math.abs(other.pk - cabin.pk);
+      if (dPk < 300 || dPk > 80000 || distanceMeters(cabin.location, other.location) > 80000) continue;
+      if (!reference || dPk < Math.abs(reference.pk - cabin.pk)) reference = other;
+    }
+    if (!reference) continue;
+    const growing = reference.pk > cabin.pk ? bearing(cabin.location, reference.location) : bearing(reference.location, cabin.location);
+
+    const axis = angleDifference(segment.bearing, growing) <= 90 ? segment.bearing : (segment.bearing + 180) % 360;
+    if (angleDifference(axis, growing) > 60) continue; // road bends too much to tell
+    const byPk = cabin.pkDirection === "positive" ? axis : (axis + 180) % 360;
+
+    if (angleDifference(byPk, segment.bearing) <= HEADING_AGREEMENT_DEGREES) {
+      cabin.heading = Math.round(segment.bearing);
+      found++;
+    }
+  }
+  return found;
 }
 
 // --- Catalonia (SCT) ---------------------------------------------------------
@@ -278,13 +398,7 @@ async function fetchOsm() {
     out body;
   `;
 
-  const json = JSON.parse(
-    await fetchText(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    })
-  );
+  const json = await fetchOverpass(query);
 
   const elements = json.elements || [];
   const enforcementsByNode = new Map();
@@ -313,6 +427,8 @@ async function fetchOsm() {
       location: { lat: round(el.lat), lon: round(el.lon) },
       maxspeed: tags["maxspeed"] || tags["enforcement:maxspeed:limit"],
       direction: tags["direction"] || tags["enforcement:direction"],
+      // A numeric direction on a speed camera is the direction of travel it checks
+      heading: /^\d+(\.\d+)?$/.test(tags["direction"] ?? "") ? Math.round(parseFloat(tags["direction"])) % 360 : undefined,
       name: tags["name"],
       ref: tags["ref"],
       source: "osm",
@@ -334,34 +450,51 @@ function spatialIndex() {
       if (!grid.has(key)) grid.set(key, []);
       grid.get(key).push(camera);
     },
-    some(camera, radius, predicate = () => true) {
+    find(camera, radius, predicate = () => true) {
       const lat = Math.floor(camera.location.lat * 100);
       const lon = Math.floor(camera.location.lon * 100);
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           for (const other of grid.get(cell(lat + dy, lon + dx)) || []) {
-            if (predicate(other) && distanceMeters(other.location, camera.location) < radius) return true;
+            if (predicate(other) && distanceMeters(other.location, camera.location) < radius) return other;
           }
         }
       }
-      return false;
+      return undefined;
     },
   };
 }
 
-// DGT lists some cameras several times (same road, PK and direction), and a section's ends
-// usually sit on a cabin: keep one marker per site, preferring the section end.
-function dedupeDgt(dgt) {
-  const sections = spatialIndex();
-  for (const camera of dgt) if (camera.type === "average_speed_camera") sections.add(camera);
+// When two markers are merged into the kept one, its heading survives only if the merged camera
+// checks the same way. `unknownConflicts`: a merged camera without a heading may check the other way.
+function mergeHeading(kept, merged, unknownConflicts) {
+  if (kept.heading === undefined) return;
+  const conflict =
+    merged.heading === undefined
+      ? unknownConflicts
+      : angleDifference(kept.heading, merged.heading) > HEADING_AGREEMENT_DEGREES;
+  if (conflict) kept.heading = undefined;
+}
 
-  const seen = new Set();
-  return dgt.filter((camera) => {
-    const key = `${camera.type} ${camera.location.lat} ${camera.location.lon}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return camera.type === "average_speed_camera" || !sections.some(camera, COLOCATED_RADIUS_METERS);
-  });
+// DGT lists some cameras several times, has cabins for both directions at one spot, and a
+// section's ends usually sit on a cabin: keep one marker per site, preferring the section end.
+function dedupeDgt(dgt) {
+  const kept = spatialIndex();
+  const result = [];
+  const sectionsFirst = [
+    ...dgt.filter((camera) => camera.type === "average_speed_camera"),
+    ...dgt.filter((camera) => camera.type !== "average_speed_camera"),
+  ];
+  for (const camera of sectionsFirst) {
+    const site = kept.find(camera, COLOCATED_RADIUS_METERS);
+    if (site) {
+      mergeHeading(site, camera, true);
+      continue;
+    }
+    kept.add(camera);
+    result.push(camera);
+  }
+  return result;
 }
 
 // Drop OSM cameras that duplicate an official one of any type (official data wins): OSM often
@@ -372,15 +505,26 @@ function dedupeOsm(official, osm) {
   for (const camera of official) index.add(camera);
   const kept = spatialIndex();
   return osm.filter((camera) => {
-    if (index.some(camera, DEDUP_RADIUS_METERS)) return false;
-    if (kept.some(camera, COLOCATED_RADIUS_METERS, (other) => other.type === camera.type)) return false;
+    const officialCamera = index.find(camera, DEDUP_RADIUS_METERS);
+    if (officialCamera) {
+      mergeHeading(officialCamera, camera, false);
+      return false;
+    }
+    const site = kept.find(camera, COLOCATED_RADIUS_METERS, (other) => other.type === camera.type);
+    if (site) {
+      mergeHeading(site, camera, true);
+      return false;
+    }
     kept.add(camera);
     return true;
   });
 }
 
-function stripUndefined(camera) {
-  return Object.fromEntries(Object.entries(camera).filter(([, v]) => v !== undefined));
+// Drop build-only fields and empty values
+const BUILD_ONLY_FIELDS = new Set(["pk", "pkDirection"]);
+
+function forOutput(camera) {
+  return Object.fromEntries(Object.entries(camera).filter(([k, v]) => v !== undefined && !BUILD_ONLY_FIELDS.has(k)));
 }
 
 async function main() {
@@ -391,6 +535,7 @@ async function main() {
   ]);
 
   const dgtAll = parseDgt(dgtXml);
+  const dgtHeadings = addDgtHeadings(dgtAll, await fetchRoadsNear(dgtAll.filter((c) => c.type === "speed_camera")));
   const dgt = dedupeDgt(dgtAll);
   const sct = parseSct(sctText);
   const official = [...dgt, ...sct];
@@ -398,13 +543,14 @@ async function main() {
 
   // Spain incl. Canary and Balearic Islands, Ceuta and Melilla
   const inSpain = ({ location: { lat, lon } }) => lat > 27 && lat < 44.5 && lon > -18.5 && lon < 4.5;
-  const cameras = [...official, ...osm].filter(inSpain).map(stripUndefined);
+  const cameras = [...official, ...osm].filter(inSpain).map(forOutput);
 
   const output = {
     generatedAt: new Date().toISOString(),
     counts: {
       dgt: dgt.length,
       dgtDuplicatesDropped: dgtAll.length - dgt.length,
+      dgtHeadingsFromRoads: dgtHeadings,
       sct: sct.length,
       osm: osm.length,
       osmDuplicatesDropped: osmResult.cameras.length - osm.length,
@@ -418,6 +564,7 @@ async function main() {
 
   const byType = {};
   for (const camera of cameras) byType[camera.type] = (byType[camera.type] || 0) + 1;
+  byType.withHeading = cameras.filter((camera) => camera.heading !== undefined).length;
   console.log(`Wrote ${cameras.length} cameras to ${OUT_FILE}`);
   console.log(output.counts, byType);
 }

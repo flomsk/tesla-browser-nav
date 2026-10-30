@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { phrases, spokenDistance } from "@/lib/navLanguage";
+import { angleDifference } from "@/lib/navigation";
 import { formatSpeedLimit, maxspeedToKmh } from "@/lib/units";
 import { beep, speak } from "@/lib/voice";
 import type { NavLanguage } from "@/lib/navLanguage";
@@ -30,6 +31,8 @@ interface UseCameraAlertsOptions {
 // Only cameras within this cone around our heading count as "ahead"
 // (tighter than for police so cameras on parallel or crossing roads are ignored)
 const AHEAD_HALF_ANGLE = 35;
+// A camera with a known heading only counts when we drive roughly its way (not the opposite carriageway)
+const MAX_HEADING_DIFF = 90;
 // Warn ~20 seconds ahead, but at least 300 m and at most 800 m
 const WARNING_SECONDS = 20;
 const MIN_WARNING_M = 300;
@@ -84,6 +87,7 @@ export function findCameraAhead(
     let diff = Math.abs(bearing(latitude, longitude, lat, lon) - heading) % 360;
     if (diff > 180) diff = 360 - diff;
     if (diff > AHEAD_HALF_ANGLE) continue;
+    if (camera.heading !== undefined && angleDifference(camera.heading, heading) > MAX_HEADING_DIFF) continue;
 
     nearest = { camera, distance, limitKmh: maxspeedToKmh(camera.maxspeed) };
   }

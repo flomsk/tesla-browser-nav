@@ -12,6 +12,7 @@ export interface SpeedCamera {
   };
   maxspeed?: string; // km/h, e.g. "120"
   direction?: string; // e.g., "forward", "backward", "both" or a bearing in degrees
+  heading?: number; // degrees: direction of travel the camera checks; absent = both ways / unknown
   name?: string;
   ref?: string; // road reference, e.g. "A-2"
   source: SpeedCameraSource;

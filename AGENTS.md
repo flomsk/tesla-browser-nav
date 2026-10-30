@@ -126,7 +126,11 @@ Ruled out: Google Places / Apple Maps POIs (their terms forbid showing them on a
   `enforcement` relations (average_speed → section, traffic_signals → red light); OSM nodes are
   dropped if mobile/temporary, "PREaviso" signs, "pedagògic" boards, seatbelt/STOP cameras,
   lifecycle-prefixed, or not edited since 2021; OSM within 150 m of an official camera (any type)
-  is a duplicate; same-type OSM within 30 m and DGT cabins within 30 m of a section end merge.
+  is a duplicate; same-type OSM within 30 m and DGT points within 30 m of each other merge.
+- **Camera heading** (`heading`, travel direction it checks): OSM numeric `direction`; DGT sections
+  start → end; DGT cabins only when the nearest one-way carriageway and the PK order agree (~40 %
+  of cabins, ~97 % match with OSM). Merging cameras that check different ways drops the heading.
+  Alerts skip a camera whose heading differs from ours by > 90°; no heading = warn both ways.
 - **Police reports:** live 30 min after the last confirmation, at most 3 h; a "not there" vote caps
   the rest at 10 min; removed when down > up; reports within 200 m merge; 6 reports / 10 min per IP.
 - **DGT incidents:**
