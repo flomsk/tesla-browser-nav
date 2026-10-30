@@ -130,7 +130,7 @@ export default function Home() {
   });
   const [showAvatarPulse, setShowAvatarPulse] = useState(true);
   const mapRef = useRef<MapRef>(null);
-  const getMapCenter = useCallback(() => mapRef.current?.getCenter() ?? null, []);
+  const getMapView = useCallback(() => mapRef.current?.getView() ?? null, []);
 
   const [destination, setDestination] = useState<{ lng: number; lat: number; name: string } | null>(null);
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -1307,7 +1307,7 @@ export default function Home() {
           isDarkMode={effectiveDarkMode}
           userLocation={latitude && longitude ? { latitude, longitude } : null}
           routeAhead={destination ? searchRouteAhead : null}
-          getSearchCenter={getMapCenter}
+          getSearchView={getMapView}
           language={navLanguage}
           fuelType={fuelType}
           units={units}

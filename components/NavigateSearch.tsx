@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import posthog from "posthog-js";
 import { PLACE_CATEGORIES, parseCategoryQuery, placeCategoryInfo } from "@/lib/places";
+import type { Bounds } from "@/lib/bounds";
 import { haversine } from "@/lib/navigation";
 import { formatDistance } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
@@ -14,8 +15,8 @@ interface NavigateSearchProps {
   userLocation: { latitude: number; longitude: number } | null;
   // Route still ahead of the driver while navigating: category searches then look along it
   routeAhead: [number, number][] | null;
-  // Centre of the map as the driver sees it; searches look there when it is far from the car
-  getSearchCenter?: () => [number, number] | null;
+  // What the driver sees on the map; searches look there when it is far from the car
+  getSearchView?: () => { center: [number, number]; bounds: Bounds } | null;
   language: NavLanguage;
   fuelType: FuelType;
   units: UnitSystem;
@@ -34,7 +35,7 @@ export function NavigateSearch({
   isDarkMode = false,
   userLocation,
   routeAhead,
-  getSearchCenter,
+  getSearchView,
   language,
   fuelType,
   units,
@@ -89,10 +90,15 @@ export function NavigateSearch({
     if (!userLocation) return;
     const requestId = ++requestIdRef.current;
     const near: [number, number] = [userLocation.longitude, userLocation.latitude];
-    // Map panned far from the car (e.g. looking at Madrid from Alicante): search there instead
-    const viewed = alongRoute ? null : getSearchCenter?.() ?? null;
-    let center =
-      viewed && haversine(near[1], near[0], viewed[1], viewed[0]) > MIN_PANNED_SEARCH_METERS ? viewed : undefined;
+    // Map panned far from the car (e.g. looking at Madrid from Alicante): search what is on screen
+    const viewed = getSearchView?.() ?? null;
+    const panned =
+      viewed && haversine(near[1], near[0], viewed.center[1], viewed.center[0]) > MIN_PANNED_SEARCH_METERS
+        ? viewed
+        : null;
+    // Along the route the road decides where to look; the view only narrows it to the stretch on screen
+    let center = alongRoute ? undefined : panned?.center;
+    let view = panned?.bounds;
     setLoading(true);
     try {
       let response: Response;
@@ -102,8 +108,8 @@ export function NavigateSearch({
         const geo = await fetch(
           `/api/geocode?${new URLSearchParams({
             q: request.place,
-            lng: String((center ?? near)[0]),
-            lat: String((center ?? near)[1]),
+            lng: String((center ?? panned?.center ?? near)[0]),
+            lat: String((center ?? panned?.center ?? near)[1]),
             language,
           })}`
         );
@@ -111,6 +117,7 @@ export function NavigateSearch({
         if (requestId !== requestIdRef.current) return;
         if (found) {
           center = [found.lon, found.lat];
+          view = undefined; // the named place decides where to look, not what is on screen
           lookAlongRoute = false;
         } else {
           showResults([]);
@@ -127,6 +134,7 @@ export function NavigateSearch({
             teslaOnly: request.teslaOnly ?? false,
             near,
             center,
+            view,
             route: lookAlongRoute ? routeAhead : undefined,
             fuelType,
             language,
@@ -135,8 +143,8 @@ export function NavigateSearch({
       } else {
         const params = new URLSearchParams({
           q: request.text,
-          lng: String((center ?? near)[0]),
-          lat: String((center ?? near)[1]),
+          lng: String((center ?? panned?.center ?? near)[0]),
+          lat: String((center ?? panned?.center ?? near)[1]),
           language,
         });
         response = await fetch(`/api/geocode?${params}`);
@@ -153,7 +161,7 @@ export function NavigateSearch({
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [userLocation, alongRoute, routeAhead, fuelType, language, showResults, getSearchCenter]);
+  }, [userLocation, alongRoute, routeAhead, fuelType, language, showResults, getSearchView]);
 
   const handleCategory = (category: PlaceCategory) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

@@ -8,6 +8,9 @@ import type { FuelType, Place, PlaceCategory } from "@/types/poi";
 const MAX_RESULTS = 15;
 // Around a point: chargers and fuel stations within ~5 km
 const NEARBY_RADIUS_DEG = 0.05;
+// On a panned map the search covers what is on screen, up to this many degrees across
+const MAX_VIEW_SPAN_DEG = 0.6;
+const MAX_TESLA_VIEW_SPAN_DEG = 4;
 // Along a route: how far off the road a place may be
 const MAX_DETOUR_METERS = 1500;
 
@@ -26,24 +29,69 @@ export interface PlaceQuery {
   category: PlaceCategory;
   near: [number, number]; // lng, lat of the driver
   center?: [number, number]; // where to look instead of around the driver (map panned elsewhere)
+  view?: Bounds; // the part of the map on screen around `center`
   route?: [number, number][]; // route ahead of the driver, starting at `near`
   teslaOnly?: boolean;
   fuelType: FuelType;
   language: string;
 }
 
-function searchArea(query: PlaceQuery): Bounds {
+export function searchArea(query: PlaceQuery): Bounds {
   const points = query.route && query.route.length >= 2 ? query.route : [query.center ?? query.near];
   const lngs = points.map((p) => p[0]);
   const lats = points.map((p) => p[1]);
   // Superchargers are sparse, so a Tesla-only search looks ~30 km around instead of ~5 km
   const pad = query.route ? 0.02 : query.teslaOnly ? 0.3 : NEARBY_RADIUS_DEG;
-  return {
+  const area = {
     left: Math.min(...lngs) - pad,
     right: Math.max(...lngs) + pad,
     bottom: Math.min(...lats) - pad,
     top: Math.max(...lats) + pad,
   };
+  if (query.view && query.route) {
+    // Along a route seen from elsewhere: only the stretch on screen, not the whole bbox of the trip
+    const view = paddedView(query.view);
+    return {
+      left: Math.max(area.left, view.left),
+      right: Math.min(area.right, view.right),
+      bottom: Math.max(area.bottom, view.bottom),
+      top: Math.min(area.top, view.top),
+    };
+  }
+  if (!query.view) return area;
+  // Whatever is on screen, but never less than the default area and never more than MAX_VIEW_SPAN
+  // around the centre, so a zoomed-out map doesn't ask Open Charge Map for the whole country
+  const [lng, lat] = query.center ?? query.near;
+  const half = (query.teslaOnly ? MAX_TESLA_VIEW_SPAN_DEG : MAX_VIEW_SPAN_DEG) / 2;
+  return {
+    left: Math.max(Math.min(area.left, query.view.left), lng - half),
+    right: Math.min(Math.max(area.right, query.view.right), lng + half),
+    bottom: Math.max(Math.min(area.bottom, query.view.bottom), lat - half),
+    top: Math.min(Math.max(area.top, query.view.top), lat + half),
+  };
+}
+
+function paddedView(view: Bounds): Bounds {
+  const padLng = (view.right - view.left) * 0.1;
+  const padLat = (view.top - view.bottom) * 0.1;
+  return { left: view.left - padLng, right: view.right + padLng, bottom: view.bottom - padLat, top: view.top + padLat };
+}
+
+function insideView(view: Bounds, lat: number, lon: number): boolean {
+  const v = paddedView(view);
+  return lon >= v.left && lon <= v.right && lat >= v.bottom && lat <= v.top;
+}
+
+// The part of the route ahead that is on screen, when the driver looks at another stretch of it.
+// Null when none of it is visible.
+export function visibleRoute(query: PlaceQuery): [number, number][] | null {
+  const route = query.route;
+  if (!route || !query.view) return route ?? null;
+  const visible = route.flatMap(([lng, lat], i) => (insideView(query.view!, lat, lng) ? [i] : []));
+  if (visible.length === 0) return null;
+  // Keep a neighbour on each side so segments crossing the screen edge stay in
+  const slice = route.slice(Math.max(visible[0] - 1, 0), Math.min(visible[visible.length - 1] + 2, route.length));
+  return slice.length >= 2 ? slice : null;
 }
 
 // Distance shown in the list: along the route when there is one, else straight line.
@@ -52,6 +100,7 @@ function locate(query: PlaceQuery, lat: number, lon: number): { distance: number
   if (query.route && query.route.length >= 2) {
     const { along, offset } = placeOnPolyline(query.route, lat, lon);
     if (offset > MAX_DETOUR_METERS || along < 50) return null;
+    if (query.view && !insideView(query.view, lat, lon)) return null;
     return { distance: along, detour: offset };
   }
   return { distance: haversine(query.near[1], query.near[0], lat, lon), detour: null };
@@ -121,9 +170,11 @@ async function fuelStations(query: PlaceQuery): Promise<Place[]> {
 }
 
 async function mapboxPlaces(query: PlaceQuery): Promise<Place[]> {
+  const route = visibleRoute(query);
+  if (query.route && !route) return [];
   const features = await categorySearch(MAPBOX_CATEGORIES[query.category], {
     near: query.center ?? query.near,
-    route: query.route,
+    route: route ?? undefined,
     language: query.language,
     limit: 25,
   });

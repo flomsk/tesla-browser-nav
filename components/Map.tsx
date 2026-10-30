@@ -1,5 +1,6 @@
 "use client";
 
+import type { Bounds } from "@/lib/bounds";
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -8,6 +9,7 @@ import type { UnitSystem } from "@/lib/units";
 import type { WazeAlert, MapBounds } from "@/types/waze";
 import type { SpeedCamera } from "@/types/speedcamera";
 import type { Congestion, RouteData } from "@/types/route";
+import { haversine } from "@/lib/navigation";
 import { congestionRuns } from "@/lib/traffic";
 import type { Place } from "@/types/poi";
 import { escapeHtml, placeCategoryInfo } from "@/lib/places";
@@ -68,8 +70,11 @@ export interface MapRef {
   zoomIn: () => void;
   zoomOut: () => void;
   flyToDestination: (lng: number, lat: number) => void;
-  getCenter: () => [number, number] | null;
+  getView: () => { center: [number, number]; bounds: Bounds } | null;
 }
+
+// A new search keeps the car on screen only when its nearest result is closer than this
+const KEEP_DRIVER_IN_VIEW_METERS = 50_000;
 
 const ALERT_COLORS: Record<string, string> = {
   POLICE: "#3b82f6", // blue
@@ -406,9 +411,14 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         essential: true,
       });
     },
-    getCenter: () => {
-      const center = map.current?.getCenter();
-      return center ? [center.lng, center.lat] : null;
+    getView: () => {
+      if (!map.current) return null;
+      const center = map.current.getCenter();
+      const view = map.current.getBounds();
+      return {
+        center: [center.lng, center.lat],
+        bounds: { left: view.getWest(), right: view.getEast(), bottom: view.getSouth(), top: view.getNorth() },
+      };
     },
   }));
 
@@ -2039,7 +2049,15 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
       onCenteredChange?.(false);
       const bounds = new mapboxgl.LngLatBounds();
       places.forEach((p) => bounds.extend([p.lon, p.lat]));
-      if (userLocation) bounds.extend([userLocation.longitude, userLocation.latitude]);
+      // Keep the driver on screen only while the results are around them. When the driver was
+      // looking at another part of the map (a far city, a later stretch of the route), fit just
+      // the results, or the view would jump back to the car.
+      if (userLocation) {
+        const car: [number, number] = [userLocation.longitude, userLocation.latitude];
+        const carVisible = map.current.getBounds().contains(car);
+        const nearestMeters = Math.min(...places.map((p) => haversine(car[1], car[0], p.lat, p.lon)));
+        if (carVisible && nearestMeters <= KEEP_DRIVER_IN_VIEW_METERS) bounds.extend(car);
+      }
       map.current.fitBounds(bounds, { padding: { top: 120, bottom: 140, left: 500, right: 120 }, maxZoom: 15, duration: 600 });
     }
     // userLocation is read only when results change; following it would refit on every GPS fix

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { boundsSchema } from "@/lib/bounds";
 import { searchPlaces } from "@/lib/placeSearch";
 import { FUEL_TYPES } from "@/lib/places";
 import { NAV_LANGUAGES } from "@/lib/navLanguage";
@@ -10,6 +11,7 @@ const querySchema = z.object({
   category: z.enum(["charging", "fuel", "cafe", "food", "parking"]),
   near: lngLat,
   center: lngLat.optional(),
+  view: boundsSchema.optional(),
   route: z.array(lngLat).min(2).max(150).optional(),
   teslaOnly: z.boolean().optional(),
   fuelType: z.enum(FUEL_TYPES.map((f) => f.code) as [string, ...string[]]).default("g95"),
