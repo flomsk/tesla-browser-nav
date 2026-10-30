@@ -8,7 +8,7 @@ before changing anything: it records what the code can't tell you — why things
 A Waze-style navigator that runs **in the Tesla in-car browser**. Tesla doesn't allow third-party
 apps, so this is a web app (Next.js) built for the car screen and for driving in **Spain**.
 Forked from [teslanav.com](https://github.com/R44VC0RP/teslanav.com) (Ryan Vogel, PolyForm
-Noncommercial 1.0.0 — keep `LICENSE` and the attribution in README/About; no commercial use).
+Noncommercial 1.0.0 — keep `LICENSE` and the attribution in README and code — the owner doesn't want it in the UI; no commercial use).
 
 The upstream app was built on Waze's unofficial live-map feed, which Waze blocked. Everything that
 came from Waze has been replaced (see *Data sources*). Don't try to scrape or proxy Waze again.

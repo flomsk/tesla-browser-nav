@@ -556,9 +556,7 @@ export function SettingsModal({
                 <div className={`text-base ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
                   {APP_DESCRIPTION}
                 </div>
-                <div className={`text-sm mt-2 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                  Based on teslanav by Ryan Vogel · PolyForm Noncommercial 1.0.0
-                </div>
+                {/* Based on teslanav by Ryan Vogel, PolyForm Noncommercial 1.0.0 — attribution lives in LICENSE and README */}
               </div>
             </div>
           </div>
