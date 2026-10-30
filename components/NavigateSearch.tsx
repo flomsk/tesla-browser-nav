@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import posthog from "posthog-js";
-import { PLACE_CATEGORIES, detectCategory, placeCategoryInfo } from "@/lib/places";
+import { PLACE_CATEGORIES, parseCategoryQuery, placeCategoryInfo } from "@/lib/places";
 import { haversine } from "@/lib/navigation";
 import { formatDistance } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
@@ -84,18 +84,40 @@ export function NavigateSearch({
   }, [isOpen, close]);
 
   const runSearch = useCallback(async (
-    request: { category: PlaceCategory; teslaOnly?: boolean } | { text: string }
+    request: { category: PlaceCategory; teslaOnly?: boolean; place?: string | null } | { text: string }
   ) => {
     if (!userLocation) return;
     const requestId = ++requestIdRef.current;
     const near: [number, number] = [userLocation.longitude, userLocation.latitude];
     // Map panned far from the car (e.g. looking at Madrid from Alicante): search there instead
     const viewed = alongRoute ? null : getSearchCenter?.() ?? null;
-    const center =
+    let center =
       viewed && haversine(near[1], near[0], viewed[1], viewed[0]) > MIN_PANNED_SEARCH_METERS ? viewed : undefined;
     setLoading(true);
     try {
       let response: Response;
+      let lookAlongRoute = alongRoute;
+      if ("category" in request && request.place) {
+        // "supercharger madrid": find the place first, then search around it instead of along the route
+        const geo = await fetch(
+          `/api/geocode?${new URLSearchParams({
+            q: request.place,
+            lng: String((center ?? near)[0]),
+            lat: String((center ?? near)[1]),
+            language,
+          })}`
+        );
+        const found: Place | undefined = geo.ok ? (await geo.json()).places?.[0] : undefined;
+        if (requestId !== requestIdRef.current) return;
+        if (found) {
+          center = [found.lon, found.lat];
+          lookAlongRoute = false;
+        } else {
+          showResults([]);
+          setSearched(true);
+          return;
+        }
+      }
       if ("category" in request) {
         response = await fetch("/api/places", {
           method: "POST",
@@ -105,7 +127,7 @@ export function NavigateSearch({
             teslaOnly: request.teslaOnly ?? false,
             near,
             center,
-            route: alongRoute ? routeAhead : undefined,
+            route: lookAlongRoute ? routeAhead : undefined,
             fuelType,
             language,
           }),
@@ -154,7 +176,7 @@ export function NavigateSearch({
       return;
     }
     debounceRef.current = setTimeout(() => {
-      const category = detectCategory(text);
+      const category = parseCategoryQuery(text);
       setActiveCategory(category?.category ?? null);
       runSearch(category ?? { text });
     }, SEARCH_DEBOUNCE_MS);
