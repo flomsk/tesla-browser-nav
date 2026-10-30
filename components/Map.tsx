@@ -68,6 +68,7 @@ export interface MapRef {
   zoomIn: () => void;
   zoomOut: () => void;
   flyToDestination: (lng: number, lat: number) => void;
+  getCenter: () => [number, number] | null;
 }
 
 const ALERT_COLORS: Record<string, string> = {
@@ -404,6 +405,10 @@ export const Map = forwardRef<MapRef, MapProps>(function Map(
         duration: 1500,
         essential: true,
       });
+    },
+    getCenter: () => {
+      const center = map.current?.getCenter();
+      return center ? [center.lng, center.lat] : null;
     },
   }));
 

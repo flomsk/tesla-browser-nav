@@ -9,6 +9,7 @@ const lngLat = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(9
 const querySchema = z.object({
   category: z.enum(["charging", "fuel", "cafe", "food", "parking"]),
   near: lngLat,
+  center: lngLat.optional(),
   route: z.array(lngLat).min(2).max(150).optional(),
   teslaOnly: z.boolean().optional(),
   fuelType: z.enum(FUEL_TYPES.map((f) => f.code) as [string, ...string[]]).default("g95"),

@@ -25,6 +25,7 @@ const NOT_FOR_CARS = /bici|bicy|bike|moto/i;
 export interface PlaceQuery {
   category: PlaceCategory;
   near: [number, number]; // lng, lat of the driver
+  center?: [number, number]; // where to look instead of around the driver (map panned elsewhere)
   route?: [number, number][]; // route ahead of the driver, starting at `near`
   teslaOnly?: boolean;
   fuelType: FuelType;
@@ -32,7 +33,7 @@ export interface PlaceQuery {
 }
 
 function searchArea(query: PlaceQuery): Bounds {
-  const points = query.route && query.route.length >= 2 ? query.route : [query.near];
+  const points = query.route && query.route.length >= 2 ? query.route : [query.center ?? query.near];
   const lngs = points.map((p) => p[0]);
   const lats = points.map((p) => p[1]);
   // Superchargers are sparse, so a Tesla-only search looks ~30 km around instead of ~5 km
@@ -78,13 +79,20 @@ async function chargers(query: PlaceQuery): Promise<Place[]> {
     })
     .filter((p): p is Place => p !== null)
     // Fast chargers first within similar distances: a 250 kW stop 2 km further beats a 7 kW socket
-    .sort((a, b) => rankCharger(a) - rankCharger(b));
+    .sort((a, b) => rankCharger(query, a) - rankCharger(query, b));
 }
 
-function rankCharger(place: Place): number {
+// Distance used for ordering: from the search centre when the map was panned away from the car
+function sortDistance(query: PlaceQuery, place: Place): number {
+  return query.center && !query.route
+    ? haversine(query.center[1], query.center[0], place.lat, place.lon)
+    : place.distance ?? 0;
+}
+
+function rankCharger(query: PlaceQuery, place: Place): number {
   const kw = parseInt(place.badge ?? "0", 10);
   const penalty = place.isTesla || kw >= 100 ? 0 : kw >= 50 ? 1500 : 6000;
-  return (place.distance ?? 0) + penalty;
+  return sortDistance(query, place) + penalty;
 }
 
 async function fuelStations(query: PlaceQuery): Promise<Place[]> {
@@ -109,12 +117,12 @@ async function fuelStations(query: PlaceQuery): Promise<Place[]> {
       };
     })
     .filter((p): p is Place => p !== null)
-    .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+    .sort((a, b) => sortDistance(query, a) - sortDistance(query, b));
 }
 
 async function mapboxPlaces(query: PlaceQuery): Promise<Place[]> {
   const features = await categorySearch(MAPBOX_CATEGORIES[query.category], {
-    near: query.near,
+    near: query.center ?? query.near,
     route: query.route,
     language: query.language,
     limit: 25,
@@ -140,7 +148,7 @@ async function mapboxPlaces(query: PlaceQuery): Promise<Place[]> {
     .filter((p) => !query.teslaOnly || p.isTesla)
     // Mapbox lists bicycle and motorbike parking under parking lots too
     .filter((p) => query.category !== "parking" || !NOT_FOR_CARS.test(p.name))
-    .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+    .sort((a, b) => sortDistance(query, a) - sortDistance(query, b));
 }
 
 export async function searchPlaces(query: PlaceQuery): Promise<Place[]> {
